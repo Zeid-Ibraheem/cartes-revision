@@ -5,6 +5,8 @@ Les changements de chaque version. Format : [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-16
+
 ### Ajouté
 - Dossiers (par exemple une ressource, R3.07) contenant des paquets (un par contrôle ou chapitre).
 - Révision d'un paquet, d'un dossier, ou de tout, avec le moteur FSRS.
