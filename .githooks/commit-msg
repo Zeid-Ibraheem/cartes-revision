@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Sur chaque message de commit : aucune donnée personnelle dans le texte.
+set -euo pipefail
+ROOT=$(git rev-parse --show-toplevel)
+# Règle du dépôt : aucune ligne d'attribution d'outil dans les commits.
+if grep -qiE '^[[:space:]]*(Co-Authored-By|Claude-Session)[[:space:]]*:' "$1"; then
+  echo "✗ Le message contient une ligne Co-Authored-By ou Claude-Session : retire-la." >&2
+  exit 1
+fi
+exec "$ROOT/scripts/check-public.sh" --message "$1" --require-blacklist

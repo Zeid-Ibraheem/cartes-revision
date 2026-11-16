@@ -1,0 +1,38 @@
+# Secrets: never commit (signing key, passwords, base64 copies)
+*.jks
+*.keystore
+*.b64
+key.properties
+local.properties
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+build/
+migrate_working_dir/
+*.symbols
+*.map.json
+
+# Android build outputs
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Release packaging (CI)
+/dist/
+/pkg/
+
+# Editors
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+
+# System
+.DS_Store
+Thumbs.db
+__pycache__/

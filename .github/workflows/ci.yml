@@ -1,0 +1,32 @@
+# Vérifie chaque changement poussé : analyse du code et tests.
+# Aucun secret ici, rien n'est signé ni publié.
+name: Vérifications
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: 3.47.5   # la même que dans release.yml
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: SQLite pour les tests de la base
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+      - run: flutter pub get
+      - run: flutter analyze --no-fatal-infos
+      - run: flutter test

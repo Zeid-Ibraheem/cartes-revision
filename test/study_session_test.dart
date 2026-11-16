@@ -1,0 +1,131 @@
+import 'package:cartes_revision/domain/models.dart';
+import 'package:cartes_revision/domain/scheduler.dart';
+import 'package:cartes_revision/domain/study_session.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+/// Moteur factice aux délais fixes, pour tester la séance seule.
+class FakeScheduler implements Scheduler {
+  @override
+  Map<Grade, Memory> outcomes(Memory memory, DateTime now) {
+    final at = now.toUtc();
+    Memory make(LearningState state, Duration delay) => Memory(
+          state: state,
+          due: at.add(delay),
+          lastReview: at,
+          step: state == LearningState.review ? null : 0,
+          stability: 1,
+          difficulty: 5,
+        );
+    return {
+      Grade.again: make(LearningState.learning, const Duration(minutes: 1)),
+      Grade.hard: make(LearningState.learning, const Duration(minutes: 30)),
+      Grade.good: make(LearningState.review, const Duration(days: 1)),
+      Grade.easy: make(LearningState.review, const Duration(days: 4)),
+    };
+  }
+}
+
+void main() {
+  // Midi heure locale : loin du changement de journée (4 h).
+  late DateTime now;
+  DateTime clock() => now;
+
+  setUp(() => now = DateTime(2026, 11, 16, 12));
+
+  Flashcard fresh(int id) => Flashcard(
+      id: id, deckId: 1, front: 'Q$id', back: 'R$id', memory: Memory.fresh(now));
+
+  Flashcard reviewed(int id, Duration dueIn) => Flashcard(
+        id: id,
+        deckId: 1,
+        front: 'Q$id',
+        back: 'R$id',
+        memory: Memory(
+          state: LearningState.review,
+          due: now.add(dueIn).toUtc(),
+          lastReview: now.subtract(const Duration(days: 5)).toUtc(),
+          stability: 5,
+          difficulty: 5,
+        ),
+      );
+
+  StudySession session(List<Flashcard> cards, {int newLimit = 20}) =>
+      StudySession(
+        cards: cards,
+        scheduler: FakeScheduler(),
+        newLimit: newLimit,
+        dayStartHour: 4,
+        shuffle: false,
+        clock: clock,
+      );
+
+  test('la limite de nouvelles cartes est respectée', () {
+    final s = session([for (var i = 1; i <= 5; i++) fresh(i)], newLimit: 2);
+    expect(s.remaining, 2);
+    expect(s.current!.id, 1);
+  });
+
+  test('les révisions attendues aujourd’hui sont prises, pas celles de plus tard', () {
+    final s = session([
+      reviewed(1, const Duration(days: -1)),
+      reviewed(2, const Duration(hours: 2)),
+      reviewed(3, const Duration(days: 3)),
+    ]);
+    expect(s.remaining, 2);
+    expect(s.current!.id, 1);
+  });
+
+  test('le délai affiché correspond au résultat enregistré', () {
+    final s = session([fresh(1)]);
+    expect(s.delayFor(Grade.good), const Duration(days: 1));
+    final answered = s.answer(Grade.good);
+    expect(answered.memory.state, LearningState.review);
+    expect(s.isFinished, isTrue);
+    expect(s.answered, 1);
+  });
+
+  test('« À revoir » : la carte revient après les autres', () {
+    final s = session([fresh(1), fresh(2)]);
+    s.answer(Grade.again); // carte 1, revient dans 1 min
+    expect(s.current!.id, 2);
+    s.answer(Grade.good);
+    // Plus rien d'autre : la carte 1 (dans moins de 20 min) revient en avance.
+    expect(s.current!.id, 1);
+    s.answer(Grade.good);
+    expect(s.isFinished, isTrue);
+    expect(s.answered, 3);
+  });
+
+  test('une carte attendue dans plus de 20 min met la séance en pause', () {
+    final s = session([fresh(1)]);
+    s.answer(Grade.hard); // revient dans 30 min
+    expect(s.current, isNull);
+    expect(s.isFinished, isFalse);
+    expect(s.waitingUntil, isNotNull);
+    expect(s.remaining, 1);
+
+    now = now.add(const Duration(minutes: 9));
+    s.resume();
+    expect(s.current, isNull, reason: 'encore 21 min : trop tôt');
+
+    now = now.add(const Duration(minutes: 2));
+    s.resume();
+    expect(s.current!.id, 1, reason: '19 min : montrée un peu en avance');
+  });
+
+  test('début de la journée de révision', () {
+    expect(studyDayStart(DateTime(2026, 11, 16, 1), 4), DateTime(2026, 11, 15, 4));
+    expect(studyDayStart(DateTime(2026, 11, 16, 4), 4), DateTime(2026, 11, 16, 4));
+    expect(studyDayEnd(DateTime(2026, 11, 16, 23), 4), DateTime(2026, 11, 17, 4));
+  });
+
+  test('compteurs', () {
+    final counts = countDue([
+      fresh(1),
+      reviewed(2, const Duration(days: -1)),
+      reviewed(3, const Duration(days: 3)),
+    ], now, 4);
+    expect(counts.fresh, 1);
+    expect(counts.due, 1);
+  });
+}
