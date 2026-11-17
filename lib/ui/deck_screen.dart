@@ -3,10 +3,15 @@ import 'package:material_ui/material_ui.dart';
 import '../data/store.dart';
 import '../domain/format.dart';
 import '../domain/models.dart';
+import '../domain/study_session.dart';
+import 'card_editor_screen.dart';
 import 'common.dart';
+import 'home_screen.dart';
 import 'review_screen.dart';
+import 'theme.dart';
 
-/// Un paquet : ses cartes, et les actions pour le modifier.
+/// Un paquet : ses compteurs, le bouton de révision et la liste de ses cartes.
+/// Appui sur une carte pour la corriger, appui long pour la supprimer.
 class DeckScreen extends StatefulWidget {
   const DeckScreen({super.key, required this.store, required this.deck});
 
@@ -35,8 +40,7 @@ class _DeckScreenState extends State<DeckScreen> {
     if (mounted) setState(() => _cards = cards);
   }
 
-  List<Flashcard> get _visible {
-    final cards = _cards ?? const <Flashcard>[];
+  List<Flashcard> _visible(List<Flashcard> cards) {
     final query = _query.trim().toLowerCase();
     if (query.isEmpty) return cards;
     return cards
@@ -46,8 +50,61 @@ class _DeckScreenState extends State<DeckScreen> {
         .toList();
   }
 
+  Future<void> _open(Widget screen) async {
+    await Navigator.of(context)
+        .push(MaterialPageRoute<Object?>(builder: (_) => screen));
+    await _reload();
+  }
+
+  Future<void> _cardMenu(Flashcard card) async {
+    final choice = await showActionSheet<String>(
+      context,
+      title: card.front,
+      actions: const [
+        SheetAction('edit', 'Corriger', Icons.edit_outlined),
+        SheetAction('delete', 'Supprimer', Icons.delete_outline, danger: true),
+      ],
+    );
+    if (choice == null || !mounted) return;
+    if (choice == 'edit') {
+      await _open(CardEditorScreen(store: _store, card: card));
+      return;
+    }
+    final sure = await confirmDialog(
+      context,
+      title: 'Supprimer la carte ?',
+      message: 'La carte et son historique de révision seront effacés.',
+      action: 'Supprimer',
+    );
+    if (!sure) return;
+    await _store.deleteCard(card);
+    await _reload();
+  }
+
+  Future<void> _deckMenu() async {
+    final choice = await showActionSheet<String>(
+      context,
+      title: '${_deck.folder} › ${_deck.name}',
+      actions: const [
+        SheetAction('rename', 'Renommer ou déplacer', Icons.drive_file_move_outline),
+        SheetAction('delete', 'Supprimer le paquet', Icons.delete_outline,
+            danger: true),
+      ],
+    );
+    if (choice == null || !mounted) return;
+    if (choice == 'rename') {
+      final deck = await renameDeck(context, _store, _deck);
+      if (deck != null && mounted) setState(() => _deck = deck);
+      return;
+    }
+    final deleted = await deleteDeck(context, _store, _deck);
+    if (deleted && mounted) Navigator.of(context).pop();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final cards = _cards;
     final now = DateTime.now();
     return Scaffold(
@@ -56,173 +113,162 @@ class _DeckScreenState extends State<DeckScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(_deck.name),
-            Text(_deck.folder, style: Theme.of(context).textTheme.bodySmall),
+            Text(_deck.folder,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant)),
           ],
         ),
         actions: [
           IconButton(
-            tooltip: 'Réviser ce paquet',
-            icon: const Icon(Icons.play_arrow),
-            onPressed: () => _review(context),
-          ),
-          PopupMenuButton<String>(
-            onSelected: (value) => switch (value) {
-              'rename' => _rename(context),
-              'delete' => _delete(context),
-              _ => null,
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'rename', child: Text('Renommer ou déplacer')),
-              PopupMenuItem(value: 'delete', child: Text('Supprimer le paquet')),
-            ],
+            tooltip: 'Actions du paquet',
+            icon: const Icon(Icons.more_horiz),
+            onPressed: _deckMenu,
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _addCard(context),
-        icon: const Icon(Icons.add),
-        label: const Text('Carte'),
+      floatingActionButton: FloatingActionButton(
+        tooltip: 'Écrire des cartes',
+        onPressed: () => _open(CardEditorScreen(store: _store, deck: _deck)),
+        child: const Icon(Icons.add),
       ),
       body: cards == null
           ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                if (cards.length > 8)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                    child: TextField(
-                      decoration: const InputDecoration(
-                        prefixIcon: Icon(Icons.search),
-                        hintText: 'Chercher dans les cartes',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                      onChanged: (value) => setState(() => _query = value),
-                    ),
-                  ),
-                Expanded(
-                  child: cards.isEmpty
-                      ? const Center(child: Text('Aucune carte : ajoute-en avec +'))
-                      : ListView.separated(
-                          padding: const EdgeInsets.only(bottom: 88),
-                          itemCount: _visible.length,
-                          separatorBuilder: (_, _) => const Divider(height: 1),
-                          itemBuilder: (context, index) {
-                            final card = _visible[index];
-                            return ListTile(
-                              title: Text(card.front,
-                                  maxLines: 3, overflow: TextOverflow.ellipsis),
-                              subtitle: Text(card.back,
-                                  maxLines: 2, overflow: TextOverflow.ellipsis),
-                              trailing: Text(describeDue(card.memory, now),
-                                  style: Theme.of(context).textTheme.bodySmall),
-                              onTap: () => _editCard(context, card),
-                            );
-                          },
-                        ),
-                ),
-              ],
-            ),
+          : _content(context, cards, now),
     );
   }
 
-  Future<void> _review(BuildContext context) async {
-    await Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => ReviewScreen(store: _store, scope: DeckCards(_deck)),
-    ));
-    await _reload();
-  }
-
-  Future<void> _addCard(BuildContext context) async {
-    // La fenêtre se rouvre après chaque carte : on en ajoute plusieurs
-    // d'affilée, et « Annuler » arrête.
-    while (true) {
-      if (!context.mounted) return;
-      final result = await showFieldsDialog(
-        context,
-        title: 'Nouvelle carte',
-        action: 'Ajouter',
-        fields: const [
-          FieldSpec(label: 'Question', multiline: true),
-          FieldSpec(label: 'Réponse', multiline: true),
-        ],
-      );
-      if (result == null || !context.mounted) break;
-      try {
-        await _store.addCard(_deck, result.values[0], result.values[1]);
-        await _reload();
-      } catch (error) {
-        if (context.mounted) showSnack(context, errorMessage(error));
-        break;
-      }
-    }
-  }
-
-  Future<void> _editCard(BuildContext context, Flashcard card) async {
-    final result = await showFieldsDialog(
-      context,
-      title: 'Corriger la carte',
-      action: 'Enregistrer',
-      deleteLabel: 'Supprimer',
-      fields: [
-        FieldSpec(label: 'Question', initial: card.front, multiline: true),
-        FieldSpec(label: 'Réponse', initial: card.back, multiline: true),
-      ],
-    );
-    if (result == null || !context.mounted) return;
-    try {
-      if (result.deleted) {
-        final sure = await confirmDialog(
-          context,
-          title: 'Supprimer la carte ?',
-          message: 'La carte et son historique de révision seront effacés.',
-          action: 'Supprimer',
-        );
-        if (!sure) return;
-        await _store.deleteCard(card);
-      } else {
-        await _store.updateCard(card, result.values[0], result.values[1]);
-      }
-      await _reload();
-    } catch (error) {
-      if (context.mounted) showSnack(context, errorMessage(error));
-    }
-  }
-
-  Future<void> _rename(BuildContext context) async {
-    final result = await showFieldsDialog(
-      context,
-      title: 'Renommer ou déplacer',
-      action: 'Enregistrer',
-      fields: [
-        FieldSpec(
-          label: 'Dossier',
-          initial: _deck.folder,
-          suggestions: _store.folderNames,
+  Widget _content(BuildContext context, List<Flashcard> cards, DateTime now) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final signal = Signal.of(context);
+    final today = _store
+        .today(countDue(cards, now, _store.settings.dayStartHour));
+    final visible = _visible(cards);
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+      children: [
+        Panel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  _BigCount(today.fresh, 'Nouvelles', signal.fresh),
+                  _BigCount(today.learning, 'En apprentissage', signal.learning),
+                  _BigCount(today.review, 'À réviser', signal.review),
+                ],
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(50)),
+                onPressed: today.total == 0
+                    ? null
+                    : () => _open(
+                        ReviewScreen(store: _store, scope: DeckCards(_deck))),
+                child: Text(today.total == 0
+                    ? 'Rien à réviser pour l’instant'
+                    : 'Réviser · ${today.total}'),
+              ),
+            ],
+          ),
         ),
-        FieldSpec(label: 'Paquet', initial: _deck.name),
+        const SizedBox(height: 24),
+        Caption(cards.length > 1 ? '${cards.length} cartes' : '${cards.length} carte'),
+        if (cards.length > 8) ...[
+          TextField(
+            decoration: InputDecoration(
+              prefixIcon: const Icon(Icons.search),
+              hintText: 'Chercher',
+              isDense: true,
+              filled: true,
+              fillColor: scheme.surfaceContainer,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide.none,
+              ),
+            ),
+            onChanged: (value) => setState(() => _query = value),
+          ),
+          const SizedBox(height: 12),
+        ],
+        if (cards.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 32),
+            child: Text(
+              'Ce paquet est vide. Écris ta première carte avec le bouton +.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: scheme.onSurfaceVariant),
+            ),
+          ),
+        for (final card in visible)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Panel(
+              padding: const EdgeInsets.all(14),
+              onTap: () => _open(CardEditorScreen(store: _store, card: card)),
+              onLongPress: () => _cardMenu(card),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(card.front,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 16)),
+                    const SizedBox(height: 6),
+                    Text(card.back,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: scheme.onSurfaceVariant)),
+                    const SizedBox(height: 8),
+                    Text(
+                      describeDue(card.memory, now),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: card.memory.due.isAfter(now) && !card.memory.isNew
+                            ? scheme.onSurfaceVariant
+                            : signal.kind(kindOf(card.memory)),
+                      ),
+                    ),
+                  ],
+                ),
+            ),
+          ),
       ],
     );
-    if (result == null || !context.mounted) return;
-    try {
-      final deck = await _store.updateDeck(_deck, result.values[0], result.values[1]);
-      if (mounted) setState(() => _deck = deck);
-    } catch (error) {
-      if (context.mounted) showSnack(context, errorMessage(error));
-    }
   }
+}
 
-  Future<void> _delete(BuildContext context) async {
-    final count = _cards?.length ?? 0;
-    final sure = await confirmDialog(
-      context,
-      title: 'Supprimer « ${_deck.name} » ?',
-      message: 'Ses $count carte(s) et leur historique de révision seront '
-          'effacés. Impossible de revenir en arrière.',
-      action: 'Supprimer',
+/// Un grand compteur coloré avec son nom dessous.
+class _BigCount extends StatelessWidget {
+  const _BigCount(this.value, this.label, this.color);
+
+  final int value;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Expanded(
+      child: Column(
+        children: [
+          Text(
+            '$value',
+            style: TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.w700,
+              color: value == 0 ? scheme.outlineVariant : color,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+          ),
+        ],
+      ),
     );
-    if (!sure || !context.mounted) return;
-    await _store.deleteDeck(_deck);
-    if (context.mounted) Navigator.of(context).pop();
   }
 }

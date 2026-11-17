@@ -15,7 +15,7 @@ void main() {
       showDelays: false,
       shuffle: false,
       textScale: 1.4,
-      theme: AppTheme.black,
+      theme: AppTheme.light,
     );
     final read = AppSettings.fromMap(original.toMap());
     expect(read.newPerDay, 35);
@@ -29,7 +29,7 @@ void main() {
     expect(read.showDelays, isFalse);
     expect(read.shuffle, isFalse);
     expect(read.textScale, 1.4);
-    expect(read.theme, AppTheme.black);
+    expect(read.theme, AppTheme.light);
   });
 
   test('valeur absente, illisible ou hors bornes : valeur par défaut', () {
@@ -56,6 +56,7 @@ void main() {
     expect(read.relearningStepsMinutes, [10]);
     expect(read.newPerDay, 20);
     expect(read.desiredRetention, 0.9);
+    expect(read.theme, AppTheme.black);
   });
 
   test('lecture des étapes', () {

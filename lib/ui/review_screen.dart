@@ -6,9 +6,13 @@ import '../data/store.dart';
 import '../domain/format.dart';
 import '../domain/models.dart';
 import '../domain/study_session.dart';
+import 'card_editor_screen.dart';
 import 'common.dart';
+import 'theme.dart';
 
-/// Une séance de révision : question, « Voir la réponse », puis la note.
+/// Une séance de révision : la question dans son bloc, un appui pour voir la
+/// réponse, puis la note. Les trois compteurs restent visibles en haut, celui
+/// de la carte affichée est souligné.
 class ReviewScreen extends StatefulWidget {
   const ReviewScreen({super.key, required this.store, required this.scope});
 
@@ -86,44 +90,36 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   Future<void> _edit() async {
-    final card = _session?.current;
-    if (card == null) return;
-    final result = await showFieldsDialog(
-      context,
-      title: 'Corriger la carte',
-      action: 'Enregistrer',
-      fields: [
-        FieldSpec(label: 'Question', initial: card.front, multiline: true),
-        FieldSpec(label: 'Réponse', initial: card.back, multiline: true),
-      ],
+    final session = _session;
+    final card = session?.current;
+    if (session == null || card == null) return;
+    final result = await Navigator.of(context).push(
+      MaterialPageRoute<CardEditResult>(
+        builder: (_) => CardEditorScreen(store: _store, card: card),
+      ),
     );
     if (result == null || !mounted) return;
-    try {
-      final updated = await _store.updateCard(card, result.values[0], result.values[1]);
-      if (mounted) setState(() => _session!.replaceCurrent(updated));
-    } catch (error) {
-      if (mounted) showSnack(context, errorMessage(error));
-    }
+    setState(() {
+      final updated = result.card;
+      if (updated != null) {
+        session.replaceCurrent(updated);
+      } else {
+        session.dropCurrent();
+        _showAnswer = false;
+      }
+    });
+    if (result.deleted) _afterMove();
   }
 
   @override
   Widget build(BuildContext context) {
     final session = _session;
+    final card = session?.current;
     return Scaffold(
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(widget.scope.label),
-            if (session != null)
-              Text(
-                '${session.remaining} restante(s) · ${session.answered} faite(s)',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-          ],
-        ),
+        title: Text(widget.scope.label),
         actions: [
-          if (session?.current != null)
+          if (card != null)
             IconButton(
               tooltip: 'Corriger la carte',
               icon: const Icon(Icons.edit_outlined),
@@ -131,49 +127,67 @@ class _ReviewScreenState extends State<ReviewScreen> {
             ),
         ],
       ),
-      body: SafeArea(child: _body(context, session)),
+      body: SafeArea(
+        child: session == null
+            ? const Center(child: CircularProgressIndicator())
+            : card == null
+                ? _pause(context, session)
+                : _card(context, session, card),
+      ),
     );
   }
 
-  Widget _body(BuildContext context, StudySession? session) {
-    if (session == null) return const Center(child: CircularProgressIndicator());
-    final card = session.current;
-    if (card == null) return _pause(context, session);
-
-    final settings = _store.settings;
-    final theme = Theme.of(context);
-    final size = 20 * settings.textScale;
+  Widget _card(BuildContext context, StudySession session, Flashcard card) {
+    final scheme = Theme.of(context).colorScheme;
+    final size = 20 * _store.settings.textScale;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Center(
+            child: CountsRow(
+              session.counts,
+              highlight: kindOf(card.memory),
+              fontSize: 17,
+              columnWidth: 52,
+            ),
+          ),
+        ),
         Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (card.memory.isNew)
-                  Text('Nouvelle carte',
-                      style: theme.textTheme.labelMedium
-                          ?.copyWith(color: theme.colorScheme.primary)),
-                const SizedBox(height: 8),
-                SelectableText(card.front,
-                    style: TextStyle(fontSize: size, height: 1.35)),
-                if (_showAnswer) ...[
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 20),
-                    child: Divider(),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _showAnswer ? null : () => setState(() => _showAnswer = true),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Caption('Question'),
+                  Panel(
+                    padding: const EdgeInsets.all(20),
+                    child: Text(card.front,
+                        style: TextStyle(fontSize: size, height: 1.4)),
                   ),
-                  SelectableText(
-                    card.back,
-                    style: TextStyle(
-                      fontSize: size,
-                      height: 1.35,
-                      color: theme.colorScheme.primary,
+                  if (_showAnswer) ...[
+                    const SizedBox(height: 20),
+                    const Caption('Réponse'),
+                    Panel(
+                      padding: const EdgeInsets.all(20),
+                      child: Text(card.back,
+                          style: TextStyle(fontSize: size, height: 1.4)),
                     ),
-                  ),
+                  ] else
+                    Padding(
+                      padding: const EdgeInsets.only(top: 28),
+                      child: Text(
+                        'Réponds dans ta tête, puis touche l’écran.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: scheme.outlineVariant),
+                      ),
+                    ),
                 ],
-              ],
+              ),
             ),
           ),
         ),
@@ -183,7 +197,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
               ? _gradeButtons(context, session)
               : FilledButton(
                   style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(56)),
+                      minimumSize: const Size.fromHeight(60)),
                   onPressed: () => setState(() => _showAnswer = true),
                   child: const Text('Voir la réponse'),
                 ),
@@ -195,34 +209,39 @@ class _ReviewScreenState extends State<ReviewScreen> {
   Widget _gradeButtons(BuildContext context, StudySession session) {
     final settings = _store.settings;
     final scheme = Theme.of(context).colorScheme;
-    final grades = settings.fourButtons
-        ? Grade.values
-        : const [Grade.again, Grade.good];
+    final signal = Signal.of(context);
+    final grades =
+        settings.fourButtons ? Grade.values : const [Grade.again, Grade.good];
     return Row(
       children: [
         for (final grade in grades)
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: FilledButton.tonal(
+              child: FilledButton(
                 style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(64),
+                  minimumSize: const Size.fromHeight(60),
                   padding: const EdgeInsets.symmetric(horizontal: 4),
-                  backgroundColor: grade == Grade.again
-                      ? scheme.errorContainer
-                      : null,
-                  foregroundColor: grade == Grade.again
-                      ? scheme.onErrorContainer
-                      : null,
+                  backgroundColor: scheme.surfaceContainerHighest,
+                  foregroundColor: signal.grade(grade),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                 ),
                 onPressed: () => _answer(grade),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(_label(grade), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(_label(grade),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
                     if (settings.showDelays)
-                      Text(formatDelay(session.delayFor(grade)),
-                          style: const TextStyle(fontSize: 12)),
+                      Text(
+                        formatDelay(session.delayFor(grade)),
+                        style: TextStyle(
+                            fontSize: 12, color: scheme.onSurfaceVariant),
+                      ),
                   ],
                 ),
               ),
@@ -239,41 +258,49 @@ class _ReviewScreenState extends State<ReviewScreen> {
         Grade.easy => 'Facile',
       };
 
+  /// Rien à montrer : séance terminée, ou attente d'une carte en
+  /// apprentissage.
   Widget _pause(BuildContext context, StudySession session) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final until = session.waitingUntil;
-    final finished = session.isFinished;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(finished ? Icons.check_circle_outline : Icons.hourglass_empty,
-                size: 64, color: theme.colorScheme.primary),
-            const SizedBox(height: 16),
-            Text(
-              finished ? 'Séance terminée' : 'Pause',
-              style: theme.textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              finished
-                  ? (session.answered == 0
-                      ? 'Rien à réviser ici pour l’instant.'
-                      : '${session.answered} réponse(s) enregistrée(s).')
-                  : 'Une carte en apprentissage revient dans '
-                      '${formatDelay(until!.difference(DateTime.now().toUtc()))}. '
-                      'Elle s’affichera toute seule si tu restes sur cet écran.',
+    final String title;
+    final String message;
+    if (until != null) {
+      title = 'Pause';
+      message = 'Une carte en apprentissage revient dans '
+          '${formatDelay(until.difference(DateTime.now().toUtc()))}. '
+          'Elle s’affichera toute seule si tu restes ici.';
+    } else if (session.answered == 0) {
+      title = 'Rien à réviser';
+      message = 'Tout est à jour ici pour l’instant.';
+    } else {
+      title = 'Séance terminée';
+      message = session.answered == 1
+          ? '1 réponse enregistrée.'
+          : '${session.answered} réponses enregistrées.';
+    }
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(title,
               textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Retour'),
-            ),
-          ],
-        ),
+              style: theme.textTheme.headlineSmall),
+          const SizedBox(height: 8),
+          Text(message,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: scheme.onSurfaceVariant)),
+          const SizedBox(height: 28),
+          FilledButton(
+            style:
+                FilledButton.styleFrom(minimumSize: const Size.fromHeight(54)),
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Retour'),
+          ),
+        ],
       ),
     );
   }

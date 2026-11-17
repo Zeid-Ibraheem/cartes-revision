@@ -89,6 +89,29 @@ void main() {
     expect(stats.total, 3);
     expect(stats.fresh, 1);
     expect(stats.due, 1);
+    expect(stats.counts.learning, 1);
+    expect(stats.counts.review, 0);
+
+    // Cinq jours plus tard, Q2 est à réviser elle aussi.
+    final later = (await db.deckStats(now.add(const Duration(days: 6)))).single;
+    expect(later.counts.learning, 1);
+    expect(later.counts.review, 1);
+  });
+
+  test('renommer et supprimer un dossier', () async {
+    await db.importFile(
+        file('# dossier: A\n# paquet: P1\na\t1\n# paquet: P2\nb\t2\n# dossier: B\n# paquet: P1\nc\t3\n'),
+        now);
+    // B contient déjà un paquet P1 : fusion refusée, rien ne change.
+    await expectLater(db.renameFolder('A', 'B'), throwsA(isA<FolderNameTaken>()));
+    expect(await db.cards(folder: 'A'), hasLength(2));
+
+    await db.renameFolder('A', 'C');
+    expect(await db.cards(folder: 'A'), isEmpty);
+    expect((await db.cards(folder: 'C')).map((c) => c.front), ['a', 'b']);
+
+    await db.deleteFolder('C');
+    expect((await db.cards()).single.front, 'c');
   });
 
   test('deux paquets du même nom dans le même dossier : refusé', () async {

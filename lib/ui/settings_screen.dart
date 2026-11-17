@@ -5,7 +5,8 @@ import '../data/store.dart';
 import '../domain/settings.dart';
 import 'common.dart';
 
-/// Tous les réglages. Chaque changement est enregistré tout de suite.
+/// Tous les réglages, rangés par blocs. Chaque changement est enregistré tout
+/// de suite.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key, required this.store});
 
@@ -17,158 +18,172 @@ class SettingsScreen extends StatelessWidget {
       listenable: store,
       builder: (context, _) {
         final s = store.settings;
+        final scheme = Theme.of(context).colorScheme;
         return Scaffold(
           appBar: AppBar(title: const Text('Réglages')),
           body: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             children: [
-              const _Section('Révisions'),
-              ListTile(
-                title: const Text('Nouvelles cartes par jour'),
-                subtitle: Text('${s.newPerDay}, tous paquets confondus'),
-                onTap: () => _editInt(
-                  context,
+              const Caption('Chaque jour'),
+              _Group(children: [
+                _Value(
                   title: 'Nouvelles cartes par jour',
-                  value: s.newPerDay,
-                  min: SettingLimits.minNewPerDay,
-                  max: SettingLimits.maxNewPerDay,
-                  apply: (value) => s.copyWith(newPerDay: value),
-                ),
-              ),
-              ListTile(
-                title: const Text('Mémorisation visée'),
-                subtitle: Text(
-                  '${(s.desiredRetention * 100).round()} % de chances de se '
-                  'souvenir quand la carte revient. Plus haut = plus de révisions.',
-                ),
-              ),
-              Slider(
-                value: s.desiredRetention,
-                min: SettingLimits.minRetention,
-                max: SettingLimits.maxRetention,
-                divisions: 27,
-                label: '${(s.desiredRetention * 100).round()} %',
-                onChanged: (value) => _save(
-                    s.copyWith(desiredRetention: (value * 100).round() / 100)),
-              ),
-              ListTile(
-                title: const Text('Étapes d’apprentissage'),
-                subtitle: Text(_stepsLabel(s.learningStepsMinutes)),
-                onTap: () => _editSteps(
-                  context,
-                  title: 'Étapes d’apprentissage (minutes)',
-                  value: s.learningStepsMinutes,
-                  apply: (steps) => s.copyWith(learningStepsMinutes: steps),
-                ),
-              ),
-              ListTile(
-                title: const Text('Étapes après un oubli'),
-                subtitle: Text(_stepsLabel(s.relearningStepsMinutes)),
-                onTap: () => _editSteps(
-                  context,
-                  title: 'Étapes après un oubli (minutes)',
-                  value: s.relearningStepsMinutes,
-                  apply: (steps) => s.copyWith(relearningStepsMinutes: steps),
-                ),
-              ),
-              ListTile(
-                title: const Text('Intervalle maximum'),
-                subtitle: Text('${s.maximumIntervalDays} jours'),
-                onTap: () => _editInt(
-                  context,
-                  title: 'Intervalle maximum (jours)',
-                  value: s.maximumIntervalDays,
-                  min: SettingLimits.minIntervalDays,
-                  max: SettingLimits.maxIntervalDays,
-                  apply: (value) => s.copyWith(maximumIntervalDays: value),
-                ),
-              ),
-              SwitchListTile(
-                title: const Text('Variation des intervalles'),
-                subtitle: const Text(
-                    'Décale un peu au hasard les cartes apprises le même jour, '
-                    'pour qu’elles ne reviennent pas toutes ensemble.'),
-                value: s.fuzz,
-                onChanged: (value) => _save(s.copyWith(fuzz: value)),
-              ),
-              ListTile(
-                title: const Text('Début de la journée'),
-                subtitle: Text('${s.dayStartHour} h : avant, une révision '
-                    'compte pour la veille'),
-                onTap: () => _editInt(
-                  context,
-                  title: 'Heure de début de la journée (0 à 23)',
-                  value: s.dayStartHour,
-                  min: 0,
-                  max: 23,
-                  apply: (value) => s.copyWith(dayStartHour: value),
-                ),
-              ),
-              const _Section('Séance'),
-              SwitchListTile(
-                title: const Text('Quatre boutons'),
-                subtitle: Text(s.fourButtons
-                    ? 'À revoir · Difficile · Correct · Facile'
-                    : 'À revoir · Correct'),
-                value: s.fourButtons,
-                onChanged: (value) => _save(s.copyWith(fourButtons: value)),
-              ),
-              SwitchListTile(
-                title: const Text('Délais sous les boutons'),
-                subtitle: const Text('Dans combien de temps la carte revient'),
-                value: s.showDelays,
-                onChanged: (value) => _save(s.copyWith(showDelays: value)),
-              ),
-              SwitchListTile(
-                title: const Text('Ordre aléatoire'),
-                value: s.shuffle,
-                onChanged: (value) => _save(s.copyWith(shuffle: value)),
-              ),
-              const _Section('Affichage'),
-              ListTile(
-                title: const Text('Taille du texte des cartes'),
-                subtitle: Text('${(s.textScale * 100).round()} %'),
-              ),
-              Slider(
-                value: s.textScale,
-                min: SettingLimits.minTextScale,
-                max: SettingLimits.maxTextScale,
-                divisions: 12,
-                label: '${(s.textScale * 100).round()} %',
-                onChanged: (value) =>
-                    _save(s.copyWith(textScale: (value * 10).round() / 10)),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                child: SegmentedButton<AppTheme>(
-                  segments: const [
-                    ButtonSegment(value: AppTheme.system, label: Text('Auto')),
-                    ButtonSegment(value: AppTheme.light, label: Text('Clair')),
-                    ButtonSegment(value: AppTheme.dark, label: Text('Sombre')),
-                    ButtonSegment(value: AppTheme.black, label: Text('Noir')),
-                  ],
-                  selected: {s.theme},
-                  onSelectionChanged: (value) =>
-                      _save(s.copyWith(theme: value.first)),
-                ),
-              ),
-              const _Section('À propos'),
-              const ListTile(
-                title: Text('$appName $appVersion'),
-                subtitle: Text(
-                    'Répétition espacée avec FSRS. Tout reste sur ce téléphone : '
-                    'l’appli n’a pas accès à Internet.'),
-              ),
-              ListTile(
-                title: const Text('Remettre les réglages par défaut'),
-                onTap: () async {
-                  final sure = await confirmDialog(
+                  value: '${s.newPerDay}',
+                  onTap: () => _editInt(
                     context,
-                    title: 'Réglages par défaut ?',
-                    message: 'Les cartes et leur historique ne changent pas.',
-                    action: 'Remettre',
-                  );
-                  if (sure) await _save(const AppSettings());
-                },
+                    title: 'Nouvelles cartes par jour',
+                    value: s.newPerDay,
+                    min: SettingLimits.minNewPerDay,
+                    max: SettingLimits.maxNewPerDay,
+                    apply: (value) => s.copyWith(newPerDay: value),
+                  ),
+                ),
+                _Value(
+                  title: 'Début de la journée',
+                  subtitle: 'Avant cette heure, une révision compte pour la veille',
+                  value: '${s.dayStartHour} h',
+                  onTap: () => _editInt(
+                    context,
+                    title: 'Heure de début de la journée',
+                    value: s.dayStartHour,
+                    min: 0,
+                    max: 23,
+                    apply: (value) => s.copyWith(dayStartHour: value),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 24),
+              const Caption('Mémorisation'),
+              _Group(children: [
+                _SliderRow(
+                  title: 'Mémorisation visée',
+                  subtitle: 'Chances de se souvenir d’une carte quand elle '
+                      'revient. Plus haut = moins d’oublis, plus de révisions.',
+                  label: '${(s.desiredRetention * 100).round()} %',
+                  value: s.desiredRetention,
+                  min: SettingLimits.minRetention,
+                  max: SettingLimits.maxRetention,
+                  divisions: 27,
+                  onChanged: (value) => _save(
+                      s.copyWith(desiredRetention: (value * 100).round() / 100)),
+                ),
+                _Value(
+                  title: 'Étapes d’apprentissage',
+                  subtitle: 'Délais d’une carte nouvelle, en minutes',
+                  value: _stepsLabel(s.learningStepsMinutes),
+                  onTap: () => _editSteps(
+                    context,
+                    title: 'Étapes d’apprentissage (minutes)',
+                    value: s.learningStepsMinutes,
+                    apply: (steps) => s.copyWith(learningStepsMinutes: steps),
+                  ),
+                ),
+                _Value(
+                  title: 'Étapes après un oubli',
+                  subtitle: 'Délais d’une carte oubliée, en minutes',
+                  value: _stepsLabel(s.relearningStepsMinutes),
+                  onTap: () => _editSteps(
+                    context,
+                    title: 'Étapes après un oubli (minutes)',
+                    value: s.relearningStepsMinutes,
+                    apply: (steps) => s.copyWith(relearningStepsMinutes: steps),
+                  ),
+                ),
+                _Value(
+                  title: 'Intervalle maximum',
+                  value: '${s.maximumIntervalDays} j',
+                  onTap: () => _editInt(
+                    context,
+                    title: 'Intervalle maximum (jours)',
+                    value: s.maximumIntervalDays,
+                    min: SettingLimits.minIntervalDays,
+                    max: SettingLimits.maxIntervalDays,
+                    apply: (value) => s.copyWith(maximumIntervalDays: value),
+                  ),
+                ),
+                _Toggle(
+                  title: 'Variation des intervalles',
+                  subtitle: 'Évite que les cartes apprises le même jour '
+                      'reviennent toutes ensemble',
+                  value: s.fuzz,
+                  onChanged: (value) => _save(s.copyWith(fuzz: value)),
+                ),
+              ]),
+              const SizedBox(height: 24),
+              const Caption('Séance'),
+              _Group(children: [
+                _Toggle(
+                  title: 'Quatre boutons',
+                  subtitle: s.fourButtons
+                      ? 'À revoir · Difficile · Correct · Facile'
+                      : 'À revoir · Correct',
+                  value: s.fourButtons,
+                  onChanged: (value) => _save(s.copyWith(fourButtons: value)),
+                ),
+                _Toggle(
+                  title: 'Délais sous les boutons',
+                  subtitle: 'Dans combien de temps la carte revient',
+                  value: s.showDelays,
+                  onChanged: (value) => _save(s.copyWith(showDelays: value)),
+                ),
+                _Toggle(
+                  title: 'Ordre aléatoire',
+                  value: s.shuffle,
+                  onChanged: (value) => _save(s.copyWith(shuffle: value)),
+                ),
+              ]),
+              const SizedBox(height: 24),
+              const Caption('Affichage'),
+              _Group(children: [
+                _SliderRow(
+                  title: 'Taille du texte des cartes',
+                  label: '${(s.textScale * 100).round()} %',
+                  value: s.textScale,
+                  min: SettingLimits.minTextScale,
+                  max: SettingLimits.maxTextScale,
+                  divisions: 12,
+                  onChanged: (value) =>
+                      _save(s.copyWith(textScale: (value * 10).round() / 10)),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                  child: SegmentedButton<AppTheme>(
+                    showSelectedIcon: false,
+                    segments: const [
+                      ButtonSegment(value: AppTheme.black, label: Text('Noir')),
+                      ButtonSegment(value: AppTheme.dark, label: Text('Sombre')),
+                      ButtonSegment(value: AppTheme.light, label: Text('Clair')),
+                      ButtonSegment(value: AppTheme.system, label: Text('Auto')),
+                    ],
+                    selected: {s.theme},
+                    onSelectionChanged: (value) =>
+                        _save(s.copyWith(theme: value.first)),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 24),
+              _Group(children: [
+                _Value(
+                  title: 'Remettre les réglages par défaut',
+                  subtitle: 'Les cartes et leur historique ne changent pas',
+                  value: '',
+                  onTap: () async {
+                    final sure = await confirmDialog(
+                      context,
+                      title: 'Réglages par défaut ?',
+                      message: 'Les cartes et leur historique ne changent pas.',
+                      action: 'Remettre',
+                    );
+                    if (sure) await _save(const AppSettings());
+                  },
+                ),
+              ]),
+              const SizedBox(height: 24),
+              Text(
+                '$appName $appVersion\nTout reste sur ce téléphone : l’appli '
+                'n’a pas accès à Internet.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
               ),
             ],
           ),
@@ -179,9 +194,8 @@ class SettingsScreen extends StatelessWidget {
 
   Future<void> _save(AppSettings settings) => store.updateSettings(settings);
 
-  static String _stepsLabel(List<int> steps) => steps.isEmpty
-      ? 'aucune : la carte passe directement aux intervalles en jours'
-      : '${formatSteps(steps)} (minutes)';
+  static String _stepsLabel(List<int> steps) =>
+      steps.isEmpty ? 'aucune' : formatSteps(steps);
 
   Future<void> _editInt(
     BuildContext context, {
@@ -191,11 +205,13 @@ class SettingsScreen extends StatelessWidget {
     required int max,
     required AppSettings Function(int value) apply,
   }) async {
-    final result = await showFieldsDialog(
+    final values = await showFieldsDialog(
       context,
       title: title,
       action: 'Enregistrer',
-      fields: [FieldSpec(label: 'Valeur ($min à $max)', initial: '$value', number: true)],
+      fields: [
+        FieldSpec(label: 'De $min à $max', initial: '$value', number: true),
+      ],
       validate: (values) {
         final parsed = int.tryParse(values.first.trim());
         if (parsed == null || parsed < min || parsed > max) {
@@ -204,8 +220,8 @@ class SettingsScreen extends StatelessWidget {
         return null;
       },
     );
-    if (result == null) return;
-    await _save(apply(int.parse(result.values.first.trim())));
+    if (values == null) return;
+    await _save(apply(int.parse(values.first.trim())));
   }
 
   Future<void> _editSteps(
@@ -214,13 +230,13 @@ class SettingsScreen extends StatelessWidget {
     required List<int> value,
     required AppSettings Function(List<int> steps) apply,
   }) async {
-    final result = await showFieldsDialog(
+    final values = await showFieldsDialog(
       context,
       title: title,
       action: 'Enregistrer',
       fields: [
         FieldSpec(
-          label: 'Étapes, séparées par des virgules',
+          label: 'Séparées par des virgules',
           hint: 'ex. 1, 10',
           initial: formatSteps(value),
         ),
@@ -230,27 +246,140 @@ class SettingsScreen extends StatelessWidget {
               '${SettingLimits.maxSteps} au maximum. Vide = aucune étape.'
           : null,
     );
-    if (result == null) return;
-    await _save(apply(parseSteps(result.values.first)!));
+    if (values == null) return;
+    await _save(apply(parseSteps(values.first)!));
   }
 }
 
-class _Section extends StatelessWidget {
-  const _Section(this.title);
+/// Un bloc de réglages, séparés par un trait fin.
+class _Group extends StatelessWidget {
+  const _Group({required this.children});
 
-  final String title;
+  final List<Widget> children;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
-      child: Text(
-        title,
-        style: Theme.of(context)
-            .textTheme
-            .titleSmall
-            ?.copyWith(color: Theme.of(context).colorScheme.primary),
+    return Panel(
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < children.length; i++) ...[
+            if (i > 0) const Divider(height: 1),
+            children[i],
+          ],
+        ],
       ),
+    );
+  }
+}
+
+/// Un réglage qui s'ouvre : son nom à gauche, sa valeur à droite.
+class _Value extends StatelessWidget {
+  const _Value({
+    required this.title,
+    required this.value,
+    required this.onTap,
+    this.subtitle,
+  });
+
+  final String title;
+  final String? subtitle;
+  final String value;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ListTile(
+      title: Text(title),
+      subtitle: subtitle == null
+          ? null
+          : Text(subtitle!, style: TextStyle(color: scheme.onSurfaceVariant)),
+      trailing: Text(
+        value,
+        style: TextStyle(fontSize: 15, color: scheme.onSurfaceVariant),
+      ),
+      onTap: onTap,
+    );
+  }
+}
+
+/// Un réglage oui / non.
+class _Toggle extends StatelessWidget {
+  const _Toggle({
+    required this.title,
+    required this.value,
+    required this.onChanged,
+    this.subtitle,
+  });
+
+  final String title;
+  final String? subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SwitchListTile(
+      title: Text(title),
+      subtitle: subtitle == null
+          ? null
+          : Text(subtitle!, style: TextStyle(color: scheme.onSurfaceVariant)),
+      value: value,
+      onChanged: onChanged,
+    );
+  }
+}
+
+/// Un réglage à curseur, avec sa valeur affichée à droite du nom.
+class _SliderRow extends StatelessWidget {
+  const _SliderRow({
+    required this.title,
+    required this.label,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.divisions,
+    required this.onChanged,
+    this.subtitle,
+  });
+
+  final String title;
+  final String? subtitle;
+  final String label;
+  final double value;
+  final double min;
+  final double max;
+  final int divisions;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ListTile(
+          title: Text(title),
+          subtitle: subtitle == null
+              ? null
+              : Text(subtitle!,
+                  style: TextStyle(color: scheme.onSurfaceVariant)),
+          trailing: Text(
+            label,
+            style: TextStyle(fontSize: 15, color: scheme.onSurface),
+          ),
+        ),
+        Slider(
+          value: value,
+          min: min,
+          max: max,
+          divisions: divisions,
+          onChanged: onChanged,
+        ),
+      ],
     );
   }
 }

@@ -6,11 +6,13 @@ Trois couches. Chacune ne connaît que celle du dessous.
 lib/
 ├── main.dart, app_info.dart   démarrage, thème, nom et version
 ├── ui/                        les écrans (Flutter)
-│   ├── home_screen.dart       dossiers, paquets, import
-│   ├── deck_screen.dart       les cartes d'un paquet
-│   ├── review_screen.dart     la séance de révision
-│   ├── settings_screen.dart   les réglages
-│   └── common.dart            fenêtres et petits outils partagés
+│   ├── home_screen.dart         dossiers, paquets, import
+│   ├── deck_screen.dart         les cartes d'un paquet
+│   ├── card_editor_screen.dart  écrire ou corriger une carte
+│   ├── review_screen.dart       la séance de révision
+│   ├── settings_screen.dart     les réglages
+│   ├── theme.dart               toutes les couleurs de l'appli
+│   └── common.dart              blocs, compteurs, menus partagés
 ├── data/                      stockage et moteur
 │   ├── database.dart          SQLite : decks, cards, reviews, settings
 │   ├── fsrs_scheduler.dart    le SEUL fichier qui connaît le paquet fsrs
@@ -29,6 +31,7 @@ lib/
 | Pour… | Fichier |
 |---|---|
 | Changer de moteur de répétition | une nouvelle classe qui implémente `Scheduler`, branchée dans `store.dart` |
+| Changer une couleur | `ui/theme.dart`, et nulle part ailleurs |
 | Ajouter un réglage | `domain/settings.dart` (valeur, borne, clé) puis `ui/settings_screen.dart` |
 | Changer le format des fichiers | `domain/card_file.dart` et `docs/FORMAT-DES-CARTES.md` |
 | Ajouter une table ou une colonne | `data/database.dart` : nouvelle version du schéma, jamais de modification directe |

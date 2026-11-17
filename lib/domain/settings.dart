@@ -33,7 +33,7 @@ class AppSettings {
     this.showDelays = true,
     this.shuffle = true,
     this.textScale = 1.0,
-    this.theme = AppTheme.system,
+    this.theme = AppTheme.black,
   });
 
   /// Nombre maximum de cartes nouvelles montrées par jour, tous paquets

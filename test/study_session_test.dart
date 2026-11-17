@@ -126,6 +126,44 @@ void main() {
       reviewed(3, const Duration(days: 3)),
     ], now, 4);
     expect(counts.fresh, 1);
+    expect(counts.learning, 0);
+    expect(counts.review, 1);
     expect(counts.due, 1);
+    expect(counts.total, 2);
+  });
+
+  test('la limite du jour ne touche que les nouvelles', () {
+    const counts = DueCounts(fresh: 30, learning: 2, review: 7);
+    final today = counts.withFreshLimit(5);
+    expect(today.fresh, 5);
+    expect(today.learning, 2);
+    expect(today.review, 7);
+    expect(counts.withFreshLimit(-3).fresh, 0);
+    expect((counts + today).fresh, 35);
+  });
+
+  test('les trois compteurs suivent la séance', () {
+    final s = session([fresh(1), fresh(2), reviewed(3, const Duration(days: -1))]);
+    expect(s.counts.fresh, 2);
+    expect(s.counts.learning, 0);
+    expect(s.counts.review, 1);
+    expect(kindOf(s.current!.memory), CardKind.review);
+
+    s.answer(Grade.good); // la révision est faite
+    expect(s.counts.review, 0);
+    expect(s.counts.fresh, 2);
+
+    s.answer(Grade.again); // une nouvelle passe en apprentissage
+    expect(s.counts.fresh, 1);
+    expect(s.counts.learning, 1);
+  });
+
+  test('supprimer la carte en cours passe à la suivante', () {
+    final s = session([fresh(1), fresh(2)]);
+    s.dropCurrent();
+    expect(s.current!.id, 2);
+    expect(s.remaining, 1);
+    s.dropCurrent();
+    expect(s.isFinished, isTrue);
   });
 }

@@ -1,10 +1,19 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../domain/study_session.dart';
+import 'theme.dart';
+
 /// Petit message en bas de l'écran.
 void showSnack(BuildContext context, String message) {
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
     ..showSnackBar(SnackBar(content: Text(message)));
+}
+
+/// Message lisible pour une erreur attendue (nom déjà pris…) ou inattendue.
+String errorMessage(Object error) {
+  final text = error.toString();
+  return text.startsWith('Exception: ') ? text.substring(11) : text;
 }
 
 /// Demande une confirmation. Renvoie `true` si l'utilisateur accepte.
@@ -34,12 +43,210 @@ Future<bool> confirmDialog(
   return confirmed == true;
 }
 
-/// Un champ d'une fenêtre de saisie.
+// ------------------------------------------------------------ Menu d'actions
+
+/// Une ligne d'un menu qui monte du bas de l'écran.
+class SheetAction<T> {
+  const SheetAction(this.value, this.label, this.icon, {this.danger = false});
+
+  final T value;
+  final String label;
+  final IconData icon;
+
+  /// Action destructrice (suppression) : affichée en rouge.
+  final bool danger;
+}
+
+/// Menu qui monte du bas de l'écran (appui long sur un élément, bouton +).
+/// Renvoie la valeur de l'action choisie, ou `null` si le menu est refermé.
+Future<T?> showActionSheet<T>(
+  BuildContext context, {
+  String? title,
+  required List<SheetAction<T>> actions,
+}) {
+  return showModalBottomSheet<T>(
+    context: context,
+    showDragHandle: true,
+    builder: (sheetContext) {
+      final theme = Theme.of(sheetContext);
+      return SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (title != null)
+                ListTile(
+                  title: Text(title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium),
+                ),
+              for (final action in actions)
+                ListTile(
+                  leading: Icon(action.icon,
+                      color: action.danger ? theme.colorScheme.error : null),
+                  title: Text(
+                    action.label,
+                    style: action.danger
+                        ? TextStyle(color: theme.colorScheme.error)
+                        : null,
+                  ),
+                  onTap: () => Navigator.of(sheetContext).pop(action.value),
+                ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+// ------------------------------------------------------------ Blocs visuels
+
+/// Un bloc à bords arrondis, légèrement détaché du fond. Avec [onTap] ou
+/// [onLongPress], tout le bloc réagit à l'appui.
+class Panel extends StatelessWidget {
+  const Panel({
+    super.key,
+    required this.child,
+    this.padding = const EdgeInsets.all(16),
+    this.onTap,
+    this.onLongPress,
+  });
+
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final content = SizedBox(
+      width: double.infinity,
+      child: Padding(padding: padding, child: child),
+    );
+    return Material(
+      color: scheme.surfaceContainer,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+      child: onTap == null && onLongPress == null
+          ? content
+          : InkWell(onTap: onTap, onLongPress: onLongPress, child: content),
+    );
+  }
+}
+
+/// Petit titre gris au-dessus d'un bloc.
+class Caption extends StatelessWidget {
+  const Caption(this.text, {super.key});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 6),
+      child: Text(
+        text.toUpperCase(),
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          letterSpacing: 1.1,
+        ),
+      ),
+    );
+  }
+}
+
+/// Les trois compteurs d'Anki : nouvelles (bleu), en apprentissage (rouge),
+/// à réviser (vert). Un zéro est affiché en gris.
+class CountsRow extends StatelessWidget {
+  const CountsRow(
+    this.counts, {
+    super.key,
+    this.highlight,
+    this.fontSize = 15,
+    this.columnWidth = 38,
+  });
+
+  final DueCounts counts;
+
+  /// Catégorie de la carte affichée : son compteur est souligné.
+  final CardKind? highlight;
+  final double fontSize;
+  final double columnWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final signal = Signal.of(context);
+    final muted = Theme.of(context).colorScheme.outlineVariant;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final kind in CardKind.values)
+          SizedBox(
+            width: columnWidth,
+            child: Text(
+              '${counts.of(kind)}',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontSize: fontSize,
+                fontWeight: FontWeight.w600,
+                color: counts.of(kind) == 0 ? muted : signal.kind(kind),
+                decoration:
+                    highlight == kind ? TextDecoration.underline : null,
+                decorationColor: signal.kind(kind),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// La légende des trois colonnes de compteurs.
+class CountsLegend extends StatelessWidget {
+  const CountsLegend({super.key, this.columnWidth = 38});
+
+  final double columnWidth;
+
+  static const _labels = {
+    CardKind.fresh: 'Nouv.',
+    CardKind.learning: 'Appr.',
+    CardKind.review: 'Rév.',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final signal = Signal.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final kind in CardKind.values)
+          SizedBox(
+            width: columnWidth,
+            child: Text(
+              _labels[kind]!,
+              textAlign: TextAlign.right,
+              style: TextStyle(fontSize: 11, color: signal.kind(kind)),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+// ------------------------------------------------------------ Saisie courte
+
+/// Un champ d'une fenêtre de saisie courte (un nom, un nombre).
 class FieldSpec {
   const FieldSpec({
     required this.label,
     this.initial = '',
-    this.multiline = false,
     this.number = false,
     this.hint,
     this.suggestions = const [],
@@ -47,7 +254,6 @@ class FieldSpec {
 
   final String label;
   final String initial;
-  final bool multiline;
   final bool number;
   final String? hint;
 
@@ -55,40 +261,25 @@ class FieldSpec {
   final List<String> suggestions;
 }
 
-/// Réponse d'une fenêtre de saisie.
-class FieldsResult {
-  const FieldsResult.saved(this.values) : deleted = false;
-  const FieldsResult.deleted()
-      : values = const [],
-        deleted = true;
-
-  final List<String> values;
-
-  /// L'utilisateur a choisi le bouton de suppression.
-  final bool deleted;
-}
-
-/// Fenêtre avec un ou plusieurs champs de texte. Renvoie `null` si annulée.
+/// Fenêtre avec un ou plusieurs champs courts. Renvoie les valeurs saisies,
+/// ou `null` si elle est annulée.
 ///
 /// [validate] reçoit les valeurs et renvoie un message d'erreur, ou `null`
 /// si tout va bien. Par défaut, aucun champ ne doit être vide.
-/// [deleteLabel] ajoute un bouton de suppression (pour corriger une carte).
-Future<FieldsResult?> showFieldsDialog(
+Future<List<String>?> showFieldsDialog(
   BuildContext context, {
   required String title,
   required List<FieldSpec> fields,
   required String action,
   String? Function(List<String> values)? validate,
-  String? deleteLabel,
 }) {
-  return showDialog<FieldsResult>(
+  return showDialog<List<String>>(
     context: context,
     builder: (_) => _FieldsDialog(
       title: title,
       fields: fields,
       action: action,
       validate: validate ?? _notEmpty,
-      deleteLabel: deleteLabel,
     ),
   );
 }
@@ -104,14 +295,12 @@ class _FieldsDialog extends StatefulWidget {
     required this.fields,
     required this.action,
     required this.validate,
-    required this.deleteLabel,
   });
 
   final String title;
   final List<FieldSpec> fields;
   final String action;
   final String? Function(List<String>) validate;
-  final String? deleteLabel;
 
   @override
   State<_FieldsDialog> createState() => _FieldsDialogState();
@@ -139,7 +328,7 @@ class _FieldsDialogState extends State<_FieldsDialog> {
       setState(() => _error = error);
       return;
     }
-    Navigator.pop(context, FieldsResult.saved(values));
+    Navigator.pop(context, values);
   }
 
   @override
@@ -156,20 +345,16 @@ class _FieldsDialogState extends State<_FieldsDialog> {
               TextField(
                 controller: _controllers[i],
                 autofocus: i == 0,
-                minLines: widget.fields[i].multiline ? 2 : 1,
-                maxLines: widget.fields[i].multiline ? 8 : 1,
                 keyboardType: widget.fields[i].number
                     ? TextInputType.number
-                    : (widget.fields[i].multiline
-                        ? TextInputType.multiline
-                        : TextInputType.text),
+                    : TextInputType.text,
                 textCapitalization: TextCapitalization.sentences,
                 decoration: InputDecoration(
                   labelText: widget.fields[i].label,
                   hintText: widget.fields[i].hint,
                   border: const OutlineInputBorder(),
                 ),
-                onSubmitted: widget.fields[i].multiline ? null : (_) => _submit(),
+                onSubmitted: (_) => _submit(),
               ),
               if (widget.fields[i].suggestions.isNotEmpty)
                 Padding(
@@ -199,15 +384,6 @@ class _FieldsDialogState extends State<_FieldsDialog> {
         ),
       ),
       actions: [
-        if (widget.deleteLabel != null)
-          TextButton(
-            onPressed: () =>
-                Navigator.pop(context, const FieldsResult.deleted()),
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.error,
-            ),
-            child: Text(widget.deleteLabel!),
-          ),
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('Annuler'),
@@ -216,20 +392,4 @@ class _FieldsDialogState extends State<_FieldsDialog> {
       ],
     );
   }
-}
-
-/// Texte court pour les compteurs d'un paquet ou d'un dossier.
-String countsLabel({required int due, required int fresh, required int total}) {
-  final parts = <String>[
-    if (due > 0) '$due à revoir',
-    if (fresh > 0) '$fresh ${fresh > 1 ? 'nouvelles' : 'nouvelle'}',
-    '$total ${total > 1 ? 'cartes' : 'carte'}',
-  ];
-  return parts.join(' · ');
-}
-
-/// Message lisible pour une erreur attendue (nom déjà pris…) ou inattendue.
-String errorMessage(Object error) {
-  final text = error.toString();
-  return text.startsWith('Exception: ') ? text.substring(11) : text;
 }

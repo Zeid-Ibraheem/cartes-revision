@@ -23,29 +23,85 @@ DateTime studyDayEnd(DateTime now, int startHour) {
   return DateTime(start.year, start.month, start.day + 1, startHour);
 }
 
-/// Nombre de cartes à voir dans un ensemble de cartes.
+/// Les trois catégories de cartes, comme dans Anki.
+enum CardKind {
+  /// Jamais révisée.
+  fresh,
+
+  /// En apprentissage ou oubliée : étapes courtes, en minutes.
+  learning,
+
+  /// Apprise : revient à intervalles en jours.
+  review,
+}
+
+CardKind kindOf(Memory memory) {
+  if (memory.isNew) return CardKind.fresh;
+  return memory.state == LearningState.review
+      ? CardKind.review
+      : CardKind.learning;
+}
+
+/// Nombre de cartes à voir aujourd'hui, par catégorie.
 class DueCounts {
-  const DueCounts({this.fresh = 0, this.due = 0});
+  const DueCounts({this.fresh = 0, this.learning = 0, this.review = 0});
 
   /// Cartes jamais révisées.
   final int fresh;
 
-  /// Cartes déjà révisées qui doivent revenir avant la fin de la journée.
-  final int due;
+  /// Cartes en apprentissage attendues avant la fin de la journée.
+  final int learning;
+
+  /// Cartes apprises attendues avant la fin de la journée.
+  final int review;
+
+  /// Cartes déjà révisées à revoir aujourd'hui.
+  int get due => learning + review;
+
+  int get total => fresh + due;
+
+  int of(CardKind kind) => switch (kind) {
+        CardKind.fresh => fresh,
+        CardKind.learning => learning,
+        CardKind.review => review,
+      };
+
+  /// Les mêmes compteurs, avec au plus [limit] cartes nouvelles (la limite
+  /// du jour) : ce qu'une séance montrera vraiment.
+  DueCounts withFreshLimit(int limit) {
+    final allowed = limit < 0 ? 0 : limit;
+    return DueCounts(
+      fresh: fresh < allowed ? fresh : allowed,
+      learning: learning,
+      review: review,
+    );
+  }
+
+  DueCounts operator +(DueCounts other) => DueCounts(
+        fresh: fresh + other.fresh,
+        learning: learning + other.learning,
+        review: review + other.review,
+      );
 }
 
 DueCounts countDue(Iterable<Flashcard> cards, DateTime now, int dayStartHour) {
   final dayEnd = studyDayEnd(now, dayStartHour);
   var fresh = 0;
-  var due = 0;
+  var learning = 0;
+  var review = 0;
   for (final card in cards) {
-    if (card.memory.isNew) {
+    final memory = card.memory;
+    if (memory.isNew) {
       fresh++;
-    } else if (card.memory.due.isBefore(dayEnd)) {
-      due++;
+    } else if (memory.due.isBefore(dayEnd)) {
+      if (memory.state == LearningState.review) {
+        review++;
+      } else {
+        learning++;
+      }
     }
   }
-  return DueCounts(fresh: fresh, due: due);
+  return DueCounts(fresh: fresh, learning: learning, review: review);
 }
 
 /// Une séance : la file des cartes à voir maintenant.
@@ -142,6 +198,26 @@ class StudySession {
   int get remaining =>
       _queue.length + _waiting.length + (_current == null ? 0 : 1);
 
+  /// Ce qu'il reste à voir dans la séance, par catégorie, carte en cours
+  /// comprise.
+  DueCounts get counts {
+    var fresh = 0;
+    var learning = 0;
+    var review = 0;
+    final current = _current;
+    for (final card in [if (current != null) current, ..._queue, ..._waiting]) {
+      switch (kindOf(card.memory)) {
+        case CardKind.fresh:
+          fresh++;
+        case CardKind.learning:
+          learning++;
+        case CardKind.review:
+          review++;
+      }
+    }
+    return DueCounts(fresh: fresh, learning: learning, review: review);
+  }
+
   /// Dans combien de temps la carte en cours reviendra si on répond [grade].
   Duration delayFor(Grade grade) {
     final memory = _outcomes[grade];
@@ -170,6 +246,12 @@ class StudySession {
   /// Remplace le texte de la carte en cours (après une correction).
   void replaceCurrent(Flashcard card) {
     if (_current?.id == card.id) _current = card;
+  }
+
+  /// Retire la carte en cours de la séance (elle vient d'être supprimée) et
+  /// passe à la suivante.
+  void dropCurrent() {
+    if (_current != null) _next();
   }
 
   void _next() {

@@ -3,24 +3,37 @@ import 'package:sqflite/sqflite.dart';
 
 import '../domain/card_file.dart';
 import '../domain/models.dart';
+import '../domain/study_session.dart';
 
 /// Un paquet et le nombre de ses cartes par catégorie.
 class DeckStats {
   const DeckStats({
     required this.deck,
     required this.total,
-    required this.fresh,
-    required this.due,
+    required this.counts,
   });
 
   final Deck deck;
+
+  /// Nombre de cartes du paquet.
   final int total;
 
-  /// Cartes jamais révisées.
-  final int fresh;
+  /// Cartes à voir aujourd'hui (toutes les nouvelles, sans la limite du jour).
+  final DueCounts counts;
 
-  /// Cartes déjà révisées attendues avant la fin de la journée.
-  final int due;
+  int get fresh => counts.fresh;
+  int get due => counts.due;
+}
+
+/// Le dossier d'arrivée contient déjà un paquet du même nom.
+class FolderNameTaken implements Exception {
+  const FolderNameTaken(this.folder);
+
+  final String folder;
+
+  @override
+  String toString() =>
+      'Le dossier « $folder » contient déjà un paquet du même nom.';
 }
 
 /// Le paquet existe déjà sous ce dossier et ce nom.
@@ -190,19 +203,25 @@ class AppDatabase {
       SELECT d.id, d.folder, d.name,
              COUNT(c.id) AS total,
              COALESCE(SUM(c.last_review IS NULL), 0) AS fresh,
-             COALESCE(SUM(c.last_review IS NOT NULL AND c.due < ?), 0) AS due
+             COALESCE(SUM(c.last_review IS NOT NULL AND c.state <> 'review'
+                          AND c.due < ?), 0) AS learning,
+             COALESCE(SUM(c.last_review IS NOT NULL AND c.state = 'review'
+                          AND c.due < ?), 0) AS review
       FROM decks d
       LEFT JOIN cards c ON c.deck_id = d.id
       GROUP BY d.id
       ORDER BY d.folder COLLATE NOCASE, d.name COLLATE NOCASE
-    ''', [_ms(dayEnd)]);
+    ''', [_ms(dayEnd), _ms(dayEnd)]);
     return [
       for (final row in rows)
         DeckStats(
           deck: _deck(row),
           total: row['total']! as int,
-          fresh: row['fresh']! as int,
-          due: row['due']! as int,
+          counts: DueCounts(
+            fresh: row['fresh']! as int,
+            learning: row['learning']! as int,
+            review: row['review']! as int,
+          ),
         ),
     ];
   }
@@ -235,6 +254,21 @@ class AppDatabase {
   /// Supprime un paquet, ses cartes et leur historique.
   Future<void> deleteDeck(int id) =>
       _db.delete('decks', where: 'id = ?', whereArgs: [id]);
+
+  /// Renomme un dossier : tous ses paquets changent de dossier.
+  Future<void> renameFolder(String from, String to) async {
+    try {
+      await _db.update('decks', {'folder': to},
+          where: 'folder = ?', whereArgs: [from]);
+    } on DatabaseException catch (error) {
+      if (error.isUniqueConstraintError()) throw FolderNameTaken(to);
+      rethrow;
+    }
+  }
+
+  /// Supprime un dossier : ses paquets, leurs cartes et leur historique.
+  Future<void> deleteFolder(String folder) =>
+      _db.delete('decks', where: 'folder = ?', whereArgs: [folder]);
 
   // ---------------------------------------------------------------- Cartes
 

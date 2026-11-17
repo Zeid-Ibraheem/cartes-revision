@@ -49,8 +49,9 @@ class FolderStats {
   final List<DeckStats> decks = [];
 
   int get total => decks.fold(0, (sum, deck) => sum + deck.total);
-  int get fresh => decks.fold(0, (sum, deck) => sum + deck.fresh);
-  int get due => decks.fold(0, (sum, deck) => sum + deck.due);
+
+  DueCounts get counts =>
+      decks.fold(const DueCounts(), (sum, deck) => sum + deck.counts);
 }
 
 /// L'état de l'appli, partagé par tous les écrans : réglages, paquets et
@@ -88,13 +89,19 @@ class AppStore extends ChangeNotifier {
     return left < 0 ? 0 : left;
   }
 
-  /// Ce qu'une séance de [fresh] nouvelles et [due] révisions montrera
-  /// vraiment aujourd'hui, limite des nouvelles comprise.
-  int studyableToday({required int fresh, required int due}) =>
-      due + (fresh < newLeftToday ? fresh : newLeftToday);
+  /// Ce qu'une séance montrera vraiment aujourd'hui pour ces compteurs :
+  /// les nouvelles sont limitées par le réglage « par jour ».
+  DueCounts today(DueCounts counts) => counts.withFreshLimit(newLeftToday);
 
-  int get freshTotal => _folders.fold(0, (sum, f) => sum + f.fresh);
-  int get dueTotal => _folders.fold(0, (sum, f) => sum + f.due);
+  /// Tous les paquets confondus, sans la limite du jour.
+  DueCounts get counts =>
+      _folders.fold(const DueCounts(), (sum, folder) => sum + folder.counts);
+
+  /// Tous les paquets, dans l'ordre de l'accueil.
+  List<Deck> get decks => [
+        for (final folder in _folders)
+          for (final stats in folder.decks) stats.deck,
+      ];
 
   /// Relit les compteurs dans la base.
   Future<void> refresh() async {
@@ -163,6 +170,16 @@ class AppStore extends ChangeNotifier {
 
   Future<void> deleteDeck(Deck deck) async {
     await _db.deleteDeck(deck.id);
+    await refresh();
+  }
+
+  Future<void> renameFolder(String from, String to) async {
+    await _db.renameFolder(from, cleanName(to));
+    await refresh();
+  }
+
+  Future<void> deleteFolder(String folder) async {
+    await _db.deleteFolder(folder);
     await refresh();
   }
 

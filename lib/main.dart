@@ -4,6 +4,7 @@ import 'app_info.dart';
 import 'data/store.dart';
 import 'domain/settings.dart';
 import 'ui/home_screen.dart';
+import 'ui/theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -69,30 +70,15 @@ class _CartesAppState extends State<CartesApp> with WidgetsBindingObserver {
             AppTheme.light => ThemeMode.light,
             AppTheme.dark || AppTheme.black => ThemeMode.dark,
           },
-          theme: _theme(Brightness.light),
-          darkTheme: theme == AppTheme.black
-              ? _blackTheme()
-              : _theme(Brightness.dark),
+          theme: buildTheme(brightness: Brightness.light),
+          // « Auto » suit le téléphone : clair le jour, noir en mode sombre.
+          darkTheme: buildTheme(
+            brightness: Brightness.dark,
+            black: theme != AppTheme.dark,
+          ),
           home: HomeScreen(store: widget.store),
         );
       },
     );
   }
-}
-
-const _seed = Color(0xFF4A5A6A);
-
-ThemeData _theme(Brightness brightness) =>
-    ThemeData(colorSchemeSeed: _seed, brightness: brightness);
-
-/// Sombre avec un fond vraiment noir (écran OLED : moins de batterie).
-ThemeData _blackTheme() {
-  final scheme = ColorScheme.fromSeed(
-    seedColor: _seed,
-    brightness: Brightness.dark,
-  ).copyWith(surface: Colors.black);
-  return ThemeData(
-    colorScheme: scheme,
-    scaffoldBackgroundColor: Colors.black,
-  );
 }

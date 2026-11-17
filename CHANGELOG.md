@@ -5,6 +5,19 @@ Les changements de chaque version. Format : [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+### Changé
+- Nouvelle interface, proche d'Anki : fond noir, blocs gris, la couleur réservée à ce qui porte une information.
+- Trois compteurs en couleur partout (accueil, paquet, séance) : nouvelles en bleu, en apprentissage en rouge, à réviser en vert. Pendant une séance, celui de la carte affichée est souligné.
+- Accueil : un appui sur un paquet ou un dossier lance la révision ; un appui long ouvre ses actions (voir les cartes, écrire, renommer, supprimer).
+- Écrire une carte se fait sur un écran entier, avec de grands champs. On choisit le paquet en haut (ou on le crée sur place) et on enchaîne les cartes.
+- Séance : la question et la réponse sont chacune dans leur bloc ; un appui n'importe où montre la réponse ; boutons de réponse en couleur.
+- Réglages rangés par blocs. Le thème par défaut est le noir.
+- Import : un simple message quand tout s'est bien passé, le détail seulement s'il y a des remarques.
+
+### Ajouté
+- Renommer et supprimer un dossier entier.
+- Supprimer une carte par appui long, et depuis une séance.
+
 ## [0.1.0] - 2026-11-16
 
 ### Ajouté
