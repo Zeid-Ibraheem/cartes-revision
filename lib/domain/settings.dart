@@ -18,6 +18,7 @@ class SettingLimits {
   static const maxTextScale = 2.0;
   static const maxStepMinutes = 14400; // 10 jours
   static const maxSteps = 8;
+  static const maxReminderMinutes = 24 * 60 - 1;
 }
 
 class AppSettings {
@@ -34,6 +35,8 @@ class AppSettings {
     this.shuffle = true,
     this.textScale = 1.0,
     this.theme = AppTheme.black,
+    this.reminderEnabled = true,
+    this.reminderMinutes = 19 * 60,
   });
 
   /// Nombre maximum de cartes nouvelles montrées par jour, tous paquets
@@ -76,6 +79,12 @@ class AppSettings {
 
   final AppTheme theme;
 
+  /// Une notification par jour s'il y a des cartes à réviser.
+  final bool reminderEnabled;
+
+  /// Heure du rappel, en minutes après minuit (19 * 60 = 19 h 00).
+  final int reminderMinutes;
+
   AppSettings copyWith({
     int? newPerDay,
     double? desiredRetention,
@@ -89,6 +98,8 @@ class AppSettings {
     bool? shuffle,
     double? textScale,
     AppTheme? theme,
+    bool? reminderEnabled,
+    int? reminderMinutes,
   }) {
     return AppSettings(
       newPerDay: newPerDay ?? this.newPerDay,
@@ -104,6 +115,8 @@ class AppSettings {
       shuffle: shuffle ?? this.shuffle,
       textScale: textScale ?? this.textScale,
       theme: theme ?? this.theme,
+      reminderEnabled: reminderEnabled ?? this.reminderEnabled,
+      reminderMinutes: reminderMinutes ?? this.reminderMinutes,
     );
   }
 
@@ -121,6 +134,8 @@ class AppSettings {
   static const _kShuffle = 'ordre_aleatoire';
   static const _kTextScale = 'taille_texte';
   static const _kTheme = 'theme';
+  static const _kReminder = 'rappel_actif';
+  static const _kReminderMinutes = 'rappel_heure_minutes';
 
   Map<String, String> toMap() {
     return {
@@ -136,6 +151,8 @@ class AppSettings {
       _kShuffle: '$shuffle',
       _kTextScale: '$textScale',
       _kTheme: theme.name,
+      _kReminder: '$reminderEnabled',
+      _kReminderMinutes: '$reminderMinutes',
     };
   }
 
@@ -163,6 +180,9 @@ class AppSettings {
       textScale: _double(map[_kTextScale], SettingLimits.minTextScale,
           SettingLimits.maxTextScale, d.textScale),
       theme: _theme(map[_kTheme], d.theme),
+      reminderEnabled: _bool(map[_kReminder], d.reminderEnabled),
+      reminderMinutes: _int(map[_kReminderMinutes], 0,
+          SettingLimits.maxReminderMinutes, d.reminderMinutes),
     );
   }
 

@@ -349,6 +349,20 @@ class AppDatabase {
     });
   }
 
+  /// Échéance de chaque carte déjà révisée (pour prévoir les rappels).
+  Future<List<DateTime>> dueTimes() async {
+    final rows = await _db.rawQuery(
+        'SELECT due FROM cards WHERE last_review IS NOT NULL');
+    return [for (final row in rows) _time(row['due']! as int)];
+  }
+
+  /// Nombre de cartes jamais révisées.
+  Future<int> freshCount() async {
+    final rows = await _db.rawQuery(
+        'SELECT COUNT(*) AS n FROM cards WHERE last_review IS NULL');
+    return rows.first['n']! as int;
+  }
+
   /// Nombre de cartes nouvelles vues pour la première fois depuis [since].
   Future<int> newCardsSeenSince(DateTime since) async {
     final rows = await _db.rawQuery(

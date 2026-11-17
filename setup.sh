@@ -46,11 +46,12 @@ fi
 ok "android/ en place"
 
 # ── 3. Réglages Android ──────────────────────────────────────────────────────
-titre "3/7 Nom affiché, signature, pas d'accès réseau"
+titre "3/7 Nom affiché, signature, rappels, pas d'accès réseau"
 sed -i "s/android:label=\"$NAME\"/android:label=\"$LABEL\"/" "$MANIFEST"
 grep -q "android:label=\"$LABEL\"" "$MANIFEST"
 ok "nom sous l'icône : $LABEL"
 python3 tools/signature_android.py | sed 's/^/   /'
+python3 tools/notifications_android.py | sed 's/^/   /'
 # L'appli n'a pas besoin d'Internet : la permission ne doit pas être dans la
 # version publiée (Flutter ne l'ajoute qu'aux versions de développement).
 if grep -q 'android.permission.INTERNET' "$MANIFEST"; then

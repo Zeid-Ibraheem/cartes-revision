@@ -5,6 +5,9 @@ Les changements de chaque version. Format : [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+### Ajouté
+- Rappel quotidien : une notification à l'heure choisie (19 h par défaut), seulement s'il y a des cartes à réviser, avec le nombre de cartes à revoir et de nouvelles. Réglable ou désactivable dans les réglages, bloc « Rappel ». Sans accès à Internet.
+
 ## [0.2.0] - 2026-11-17
 
 ### Changé

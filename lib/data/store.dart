@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../domain/card_file.dart';
 import '../domain/models.dart';
+import '../domain/reminder_plan.dart';
 import '../domain/settings.dart';
 import '../domain/study_session.dart';
 import 'database.dart';
@@ -57,10 +58,15 @@ class FolderStats {
 /// L'état de l'appli, partagé par tous les écrans : réglages, paquets et
 /// compteurs. Les écrans l'écoutent et se redessinent quand il change.
 class AppStore extends ChangeNotifier {
-  AppStore._(this._db, this._settings, this._clock);
+  AppStore._(this._db, this._settings, this._clock, this._reminders);
 
   final AppDatabase _db;
   final DateTime Function() _clock;
+
+  /// Programmation des rappels, ou `null` (tests, plateforme sans
+  /// notifications).
+  final ReminderService? _reminders;
+  Future<void> _reminderUpdate = Future.value();
   AppSettings _settings;
   List<FolderStats> _folders = const [];
   int _newSeenToday = 0;
@@ -68,12 +74,67 @@ class AppStore extends ChangeNotifier {
   static Future<AppStore> open({
     AppDatabase? database,
     DateTime Function()? clock,
+    ReminderService? reminders,
   }) async {
     final db = database ?? await AppDatabase.open();
     final settings = AppSettings.fromMap(await db.settings());
-    final store = AppStore._(db, settings, clock ?? DateTime.now);
+    final store = AppStore._(db, settings, clock ?? DateTime.now, reminders);
     await store.refresh();
     return store;
+  }
+
+  // Clé enregistrée dans la table des réglages, hors des réglages visibles.
+  static const _kPermissionAsked = 'notifications_autorisation_demandee';
+
+  /// Au premier démarrage, demande l'autorisation des notifications si le
+  /// rappel est actif. Une seule fois : ensuite, on ne la redemande que si
+  /// l'utilisateur réactive le rappel lui-même.
+  Future<void> askReminderPermissionOnce() async {
+    final reminders = _reminders;
+    if (reminders == null || !_settings.reminderEnabled) return;
+    final stored = await _db.settings();
+    if (stored.containsKey(_kPermissionAsked)) return;
+    await _db.saveSettings({_kPermissionAsked: 'true'});
+    try {
+      await reminders.requestPermission();
+    } catch (_) {
+      // Pas de notifications sur cet appareil : l'appli marche sans.
+    }
+  }
+
+  /// Le rappel vient d'être activé par l'utilisateur : redemande
+  /// l'autorisation. Renvoie `false` si elle est refusée.
+  Future<bool> requestReminderPermission() async {
+    final reminders = _reminders;
+    if (reminders == null) return false;
+    try {
+      return await reminders.requestPermission();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Recalcule et reprogramme les rappels. Les mises à jour s'enchaînent
+  /// l'une après l'autre : la dernière gagne toujours.
+  Future<void> _updateReminders(int newLeftToday) {
+    final reminders = _reminders;
+    if (reminders == null) return Future.value();
+    final settings = _settings;
+    _reminderUpdate = _reminderUpdate.then((_) async {
+      try {
+        final plan = planReminders(
+          settings: settings,
+          now: _clock(),
+          dueTimes: await _db.dueTimes(),
+          freshTotal: await _db.freshCount(),
+          newLeftToday: newLeftToday,
+        );
+        await reminders.replaceAll(plan);
+      } catch (_) {
+        // Un rappel raté ne doit jamais bloquer l'appli.
+      }
+    });
+    return _reminderUpdate;
   }
 
   AppSettings get settings => _settings;
@@ -118,6 +179,7 @@ class AppStore extends ChangeNotifier {
     }
     _folders = byName.values.toList();
     notifyListeners();
+    await _updateReminders(newLeftToday);
   }
 
   // ---------------------------------------------------------------- Réglages

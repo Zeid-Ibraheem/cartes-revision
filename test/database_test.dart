@@ -4,9 +4,26 @@ import 'package:cartes_revision/data/fsrs_scheduler.dart';
 import 'package:cartes_revision/data/store.dart';
 import 'package:cartes_revision/domain/card_file.dart';
 import 'package:cartes_revision/domain/models.dart';
+import 'package:cartes_revision/domain/reminder_plan.dart';
 import 'package:cartes_revision/domain/settings.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+/// Remplace les notifications du téléphone dans les tests.
+class FakeReminders implements ReminderService {
+  final List<List<PlannedReminder>> calls = [];
+  int permissionRequests = 0;
+
+  @override
+  Future<bool> requestPermission() async {
+    permissionRequests++;
+    return true;
+  }
+
+  @override
+  Future<void> replaceAll(List<PlannedReminder> reminders) async =>
+      calls.add(reminders);
+}
 
 void main() {
   late AppDatabase db;
@@ -151,6 +168,50 @@ void main() {
     expect(all, hasLength(3));
     expect((await db.cards(folder: 'A')).map((c) => c.front), ['a', 'b']);
     expect((await db.cards(deckId: all.last.deckId)).single.front, 'c');
+  });
+
+  test('échéances et nombre de nouvelles (pour les rappels)', () async {
+    await db.importFile(file('# paquet: P\na\t1\nb\t2\nc\t3\n'), now);
+    expect(await db.dueTimes(), isEmpty);
+    expect(await db.freshCount(), 3);
+    final card = (await db.cards()).first;
+    final due = now.add(const Duration(days: 2));
+    await db.recordReview(
+      before: card,
+      after: Memory(
+          state: LearningState.review,
+          due: due,
+          lastReview: now,
+          stability: 2,
+          difficulty: 5),
+      grade: Grade.good,
+      at: now,
+    );
+    expect(await db.dueTimes(), [due]);
+    expect(await db.freshCount(), 2);
+  });
+
+  test('les rappels suivent les cartes et les réglages', () async {
+    final reminders = FakeReminders();
+    // 10 h UTC = matinée en France : le rappel de 19 h est encore à venir.
+    final store =
+        await AppStore.open(database: db, clock: () => now, reminders: reminders);
+    expect(reminders.calls.last, isEmpty, reason: 'aucune carte');
+
+    await store.importText('# paquet: P\na\t1\nb\t2\n', fallbackDeck: 'f');
+    expect(reminders.calls.last.first.title, '2 cartes à réviser');
+
+    await store.updateSettings(
+        store.settings.copyWith(reminderEnabled: false));
+    expect(reminders.calls.last, isEmpty);
+
+    // Autorisation demandée une seule fois, et seulement si le rappel est actif.
+    await store.askReminderPermissionOnce();
+    expect(reminders.permissionRequests, 0);
+    await store.updateSettings(store.settings.copyWith(reminderEnabled: true));
+    await store.askReminderPermissionOnce();
+    await store.askReminderPermissionOnce();
+    expect(reminders.permissionRequests, 1);
   });
 
   test('réglages enregistrés et relus', () async {

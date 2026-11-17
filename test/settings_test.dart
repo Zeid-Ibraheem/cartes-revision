@@ -16,6 +16,8 @@ void main() {
       shuffle: false,
       textScale: 1.4,
       theme: AppTheme.light,
+      reminderEnabled: false,
+      reminderMinutes: 7 * 60 + 30,
     );
     final read = AppSettings.fromMap(original.toMap());
     expect(read.newPerDay, 35);
@@ -30,6 +32,8 @@ void main() {
     expect(read.shuffle, isFalse);
     expect(read.textScale, 1.4);
     expect(read.theme, AppTheme.light);
+    expect(read.reminderEnabled, isFalse);
+    expect(read.reminderMinutes, 7 * 60 + 30);
   });
 
   test('valeur absente, illisible ou hors bornes : valeur par défaut', () {
@@ -41,6 +45,7 @@ void main() {
       'intervalle_max_jours': '-3',
       'debut_journee_heure': '24',
       'theme': 'violet',
+      'rappel_heure_minutes': '1440',
     });
     expect(read.newPerDay, defaults.newPerDay);
     expect(read.desiredRetention, defaults.desiredRetention);
@@ -48,6 +53,7 @@ void main() {
     expect(read.maximumIntervalDays, defaults.maximumIntervalDays);
     expect(read.dayStartHour, defaults.dayStartHour);
     expect(read.theme, defaults.theme);
+    expect(read.reminderMinutes, defaults.reminderMinutes);
   });
 
   test('première ouverture (rien d’enregistré) : valeurs par défaut', () {
@@ -57,6 +63,8 @@ void main() {
     expect(read.newPerDay, 20);
     expect(read.desiredRetention, 0.9);
     expect(read.theme, AppTheme.black);
+    expect(read.reminderEnabled, isTrue);
+    expect(read.reminderMinutes, 19 * 60);
   });
 
   test('lecture des étapes', () {

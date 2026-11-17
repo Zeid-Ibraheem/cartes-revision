@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../app_info.dart';
 import '../data/store.dart';
+import '../domain/reminder_plan.dart';
 import '../domain/settings.dart';
 import 'common.dart';
 
@@ -51,6 +52,23 @@ class SettingsScreen extends StatelessWidget {
                     apply: (value) => s.copyWith(dayStartHour: value),
                   ),
                 ),
+              ]),
+              const SizedBox(height: 24),
+              const Caption('Rappel'),
+              _Group(children: [
+                _Toggle(
+                  title: 'Rappel quotidien',
+                  subtitle: 'Une notification par jour, seulement s’il y a '
+                      'des cartes à réviser',
+                  value: s.reminderEnabled,
+                  onChanged: (value) => _toggleReminder(context, value),
+                ),
+                if (s.reminderEnabled)
+                  _Value(
+                    title: 'Heure du rappel',
+                    value: formatTimeOfDay(s.reminderMinutes),
+                    onTap: () => _pickReminderTime(context, s.reminderMinutes),
+                  ),
               ]),
               const SizedBox(height: 24),
               const Caption('Mémorisation'),
@@ -193,6 +211,34 @@ class SettingsScreen extends StatelessWidget {
   }
 
   Future<void> _save(AppSettings settings) => store.updateSettings(settings);
+
+  Future<void> _toggleReminder(BuildContext context, bool enabled) async {
+    await _save(store.settings.copyWith(reminderEnabled: enabled));
+    if (!enabled) return;
+    final allowed = await store.requestReminderPermission();
+    if (!allowed && context.mounted) {
+      showSnack(
+        context,
+        'Notifications bloquées : autorise-les dans les réglages Android, '
+        'Applis › Cartes › Notifications.',
+      );
+    }
+  }
+
+  Future<void> _pickReminderTime(BuildContext context, int minutes) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60),
+      helpText: 'Heure du rappel',
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+        child: child!,
+      ),
+    );
+    if (picked == null) return;
+    await _save(store.settings
+        .copyWith(reminderMinutes: picked.hour * 60 + picked.minute));
+  }
 
   static String _stepsLabel(List<int> steps) =>
       steps.isEmpty ? 'aucune' : formatSteps(steps);

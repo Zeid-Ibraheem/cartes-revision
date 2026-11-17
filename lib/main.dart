@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'app_info.dart';
+import 'data/notification_reminders.dart';
 import 'data/store.dart';
 import 'domain/settings.dart';
 import 'ui/home_screen.dart';
@@ -24,8 +25,9 @@ Future<void> main() async {
           ),
         ),
       );
-  final store = await AppStore.open();
+  final store = await AppStore.open(reminders: NotificationReminders());
   runApp(CartesApp(store: store));
+  await store.askReminderPermissionOnce();
 }
 
 class CartesApp extends StatefulWidget {
