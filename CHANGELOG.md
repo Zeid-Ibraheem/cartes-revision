@@ -5,6 +5,8 @@ Les changements de chaque version. Format : [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-17
+
 ### Changé
 - Nouvelle interface, proche d'Anki : fond noir, blocs gris, la couleur réservée à ce qui porte une information.
 - Trois compteurs en couleur partout (accueil, paquet, séance) : nouvelles en bleu, en apprentissage en rouge, à réviser en vert. Pendant une séance, celui de la carte affichée est souligné.
