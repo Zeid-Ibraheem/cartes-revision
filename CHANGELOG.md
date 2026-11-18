@@ -5,6 +5,8 @@ Les changements de chaque version. Format : [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-18
+
 ## [0.4.0] - 2026-11-18
 
 ### Ajouté
