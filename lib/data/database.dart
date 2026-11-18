@@ -4,6 +4,7 @@ import 'package:sqflite/sqflite.dart';
 import '../domain/card_file.dart';
 import '../domain/folder_path.dart';
 import '../domain/models.dart';
+import '../domain/stats.dart';
 import '../domain/study_session.dart';
 
 /// Un paquet et le nombre de ses cartes par catégorie.
@@ -392,6 +393,53 @@ class AppDatabase {
     final rows = await _db.rawQuery(
         'SELECT COUNT(*) AS n FROM cards WHERE last_review IS NULL');
     return rows.first['n']! as int;
+  }
+
+  /// Les réponses données depuis [since], d'un paquet, d'un dossier
+  /// (sous-dossiers compris), ou de tout.
+  Future<List<ReviewEntry>> reviews({
+    required DateTime since,
+    int? deckId,
+    String? folder,
+  }) async {
+    final where = StringBuffer('r.reviewed_at >= ?');
+    final args = <Object?>[_ms(since)];
+    if (deckId != null) {
+      where.write(' AND c.deck_id = ?');
+      args.add(deckId);
+    } else if (folder != null) {
+      where.write(' AND c.deck_id IN (SELECT id FROM decks WHERE $_inFolder)');
+      args.addAll(_inFolderArgs(folder));
+    }
+    final rows = await _db.rawQuery('''
+      SELECT r.reviewed_at, r.grade, r.state_before, r.was_new, r.duration_ms
+      FROM reviews r JOIN cards c ON c.id = r.card_id
+      WHERE $where
+      ORDER BY r.reviewed_at, r.id
+    ''', args);
+    return [
+      for (final row in rows)
+        ReviewEntry(
+          at: _time(row['reviewed_at']! as int),
+          grade: Grade.values.byName(row['grade']! as String),
+          stateBefore:
+              LearningState.values.byName(row['state_before']! as String),
+          wasNew: row['was_new'] == 1,
+          durationMs: row['duration_ms'] as int?,
+        ),
+    ];
+  }
+
+  /// Nombre de réponses et temps passé depuis [since], tous paquets.
+  Future<StudyTotals> totalsSince(DateTime since) async {
+    final rows = await _db.rawQuery(
+        'SELECT COUNT(*) AS n, COALESCE(SUM(duration_ms), 0) AS ms '
+        'FROM reviews WHERE reviewed_at >= ?',
+        [_ms(since)]);
+    return StudyTotals(
+      answers: rows.first['n']! as int,
+      durationMs: rows.first['ms']! as int,
+    );
   }
 
   /// Nombre de cartes nouvelles vues pour la première fois depuis [since].

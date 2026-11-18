@@ -7,6 +7,7 @@ import '../domain/folder_path.dart';
 import '../domain/models.dart';
 import '../domain/reminder_plan.dart';
 import '../domain/settings.dart';
+import '../domain/stats.dart';
 import '../domain/study_session.dart';
 import 'database.dart';
 import 'fsrs_scheduler.dart';
@@ -125,6 +126,7 @@ class AppStore extends ChangeNotifier {
   List<FolderNode> _folders = const [];
   Set<String> _expanded = {};
   int _newSeenToday = 0;
+  StudyTotals _todayTotals = const StudyTotals();
 
   static Future<AppStore> open({
     AppDatabase? database,
@@ -222,6 +224,34 @@ class AppStore extends ChangeNotifier {
 
   bool get isEmpty => _folders.isEmpty;
 
+  /// Réponses données aujourd'hui et temps passé.
+  StudyTotals get todayTotals => _todayTotals;
+
+  /// Les statistiques de [scope] sur les [periodDays] derniers jours.
+  Future<StatsReport> stats(StudyScope scope, {required int periodDays}) async {
+    final now = _clock();
+    // Un an d'historique au moins, pour la série de jours d'affilée.
+    final span = periodDays > 365 ? periodDays : 365;
+    final since = studyDayStart(now, _settings.dayStartHour)
+        .subtract(Duration(days: span));
+    final (int? deckId, String? folder) = switch (scope) {
+      AllCards() => (null, null),
+      FolderCards(:final folder) => (null, folder),
+      DeckCards(:final deck) => (deck.id, null),
+    };
+    final entries =
+        await _db.reviews(since: since, deckId: deckId, folder: folder);
+    final cards = await _db.cards(deckId: deckId, folder: folder);
+    return computeStats(
+      entries: entries,
+      cards: [for (final card in cards) card.memory],
+      now: now,
+      dayStartHour: _settings.dayStartHour,
+      periodDays: periodDays,
+      desiredRetention: _settings.desiredRetention,
+    );
+  }
+
   /// Cartes nouvelles encore permises aujourd'hui (réglage « par jour »).
   int get newLeftToday {
     final left = _settings.newPerDay - _newSeenToday;
@@ -257,6 +287,7 @@ class AppStore extends ChangeNotifier {
     final dayEnd = studyDayEnd(now, _settings.dayStartHour);
     final stats = await _db.deckStats(dayEnd);
     _newSeenToday = await _db.newCardsSeenSince(dayStart);
+    _todayTotals = await _db.totalsSince(dayStart);
     _folders = buildFolderTree(stats);
     notifyListeners();
     await _updateReminders(newLeftToday);

@@ -10,6 +10,8 @@ Le principe : tu écris des cartes question / réponse, et l'appli te les repose
 
 Pourquoi ce fonctionnement : se tester (au lieu de relire) et espacer les révisions sont les deux méthodes d'apprentissage les mieux prouvées (Dunlosky et al., 2013 ; Cepeda et al., 2008). Le calcul des dates utilise FSRS, l'algorithme qu'Anki utilise aussi aujourd'hui.
 
+Des statistiques te montrent ton taux de réussite (à comparer à la mémorisation visée), ton activité jour par jour, ta progression et les cartes à venir.
+
 Un rappel par jour, à l'heure que tu choisis, te dit combien de cartes t'attendent, seulement s'il y en a.
 
 Rien ne quitte le téléphone : pas de compte, pas de serveur, et l'appli n'a même pas la permission d'accéder à Internet.

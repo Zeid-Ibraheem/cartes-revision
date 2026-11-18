@@ -7,31 +7,62 @@ import '../data/store.dart';
 import '../domain/card_file.dart';
 import '../domain/folder_path.dart';
 import '../domain/models.dart';
+import '../domain/stats.dart';
 import '../domain/study_session.dart';
 import 'card_editor_screen.dart';
 import 'common.dart';
 import 'deck_screen.dart';
 import 'review_screen.dart';
 import 'settings_screen.dart';
+import 'stats_screen.dart';
 
-/// Écran d'accueil, à la façon d'Anki : la liste des dossiers et des paquets,
-/// avec leurs trois compteurs. Un appui lance la révision, un appui long
-/// ouvre les actions (voir, ajouter, renommer, supprimer).
-class HomeScreen extends StatelessWidget {
+/// Écran d'accueil, comme AnkiDroid : l'arbre des dossiers et des paquets,
+/// les trois compteurs à droite, le bouton + qui ouvre ses actions, et le
+/// bilan du jour en bas.
+///
+/// - Appui sur un nom : révision (ou, s'il n'y a rien à revoir, ouverture
+///   du dossier ou de la liste des cartes du paquet).
+/// - Appui sur la flèche : déplier ou replier le dossier.
+/// - Appui long : toutes les actions (statistiques, renommer, déplacer…).
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.store});
 
   final AppStore store;
 
   @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  bool _dialOpen = false;
+
+  AppStore get store => widget.store;
+
+  void _closeDial() {
+    if (_dialOpen) setState(() => _dialOpen = false);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return ListenableBuilder(
       listenable: store,
-      builder: (context, _) {
-        final today = store.today(store.counts);
-        return Scaffold(
+      builder: (context, _) => PopScope(
+        // Le retour arrière referme d'abord le menu du bouton +.
+        canPop: !_dialOpen,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) _closeDial();
+        },
+        child: Scaffold(
           appBar: AppBar(
             title: const Text(appName),
             actions: [
+              IconButton(
+                tooltip: 'Statistiques',
+                icon: const Icon(Icons.bar_chart),
+                onPressed: () => _push(
+                    context, StatsScreen(store: store, scope: const AllCards())),
+              ),
               IconButton(
                 tooltip: 'Réglages',
                 icon: const Icon(Icons.tune),
@@ -39,50 +70,66 @@ class HomeScreen extends StatelessWidget {
               ),
             ],
           ),
-          floatingActionButton: FloatingActionButton(
-            tooltip: 'Ajouter',
-            onPressed: () => _addMenu(context),
-            child: const Icon(Icons.add),
-          ),
-          bottomNavigationBar: store.isEmpty
-              ? null
-              : SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                    child: FilledButton(
-                      style: FilledButton.styleFrom(
-                          minimumSize: const Size.fromHeight(54)),
-                      onPressed: today.total == 0
-                          ? null
-                          : () => _review(context, const AllCards()),
-                      child: Text(today.total == 0
-                          ? 'Rien à réviser pour l’instant'
-                          : 'Tout réviser · ${today.total}'),
-                    ),
+          body: Stack(
+            children: [
+              Positioned.fill(
+                child: store.isEmpty ? _empty(context) : _list(context),
+              ),
+              if (_dialOpen)
+                Positioned.fill(
+                  child: GestureDetector(
+                    onTap: _closeDial,
+                    child: ColoredBox(color: scheme.surface.withAlpha(215)),
                   ),
                 ),
-          body: store.isEmpty ? _empty(context) : _list(context),
-        );
-      },
+            ],
+          ),
+          floatingActionButton: _SpeedDial(
+            open: _dialOpen,
+            onToggle: () => setState(() => _dialOpen = !_dialOpen),
+            actions: [
+              _DialAction('Importer un fichier', Icons.download, () {
+                importCardFiles(context, store);
+              }),
+              _DialAction('Créer un dossier', Icons.create_new_folder_outlined,
+                  () => _newFolder(context)),
+              _DialAction('Créer un paquet', Icons.style_outlined,
+                  () => _newDeck(context)),
+              _DialAction('Ajouter', Icons.add_box_outlined,
+                  () => _push(context, CardEditorScreen(store: store))),
+            ],
+            onAction: _closeDial,
+          ),
+          bottomNavigationBar: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+              child: Text(
+                todayLine(store.todayTotals),
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 15, color: scheme.onSurfaceVariant),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
   // ---------------------------------------------------------------- Liste
 
   Widget _list(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
+    final scheme = Theme.of(context).colorScheme;
     final rows = <Widget>[];
     void addFolder(FolderNode folder) {
       final open = store.isExpanded(folder.path);
-      if (folder.depth == 0) rows.add(const SizedBox(height: 8));
       rows.add(_Row(
         title: folder.name,
         depth: folder.depth,
         folder: true,
         open: open,
         counts: store.today(folder.counts),
-        onTap: () => store.toggleExpanded(folder.path),
+        onToggle: () => store.toggleExpanded(folder.path),
+        onTap: () => _openFolder(context, folder),
         onLongPress: () => _folderMenu(context, folder),
       ));
       if (!open) return;
@@ -100,26 +147,18 @@ class HomeScreen extends StatelessWidget {
 
     store.folders.forEach(addFolder);
     return ListView(
-      padding: const EdgeInsets.only(bottom: 96),
+      padding: const EdgeInsets.only(top: 4, bottom: 96),
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  store.newLeftToday == 0 && store.counts.fresh > 0
-                      ? 'Nouvelles cartes : limite du jour atteinte'
-                      : 'Appui long pour réviser ou modifier',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: scheme.onSurfaceVariant),
-                ),
-              ),
-              const CountsLegend(),
-            ],
-          ),
-        ),
         ...rows,
+        if (store.newLeftToday == 0 && store.counts.fresh > 0)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+            child: Text(
+              'Limite de nouvelles cartes atteinte pour aujourd’hui '
+              '(${store.settings.newPerDay}, modifiable dans les réglages).',
+              style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+            ),
+          ),
       ],
     );
   }
@@ -135,23 +174,10 @@ class HomeScreen extends StatelessWidget {
             Text('Aucune carte', style: theme.textTheme.headlineSmall),
             const SizedBox(height: 8),
             Text(
-              'Écris tes premières cartes, ou importe un fichier.',
+              'Touche + pour créer un paquet, écrire des cartes ou importer '
+              'un fichier.',
               textAlign: TextAlign.center,
               style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 28),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(54)),
-              onPressed: () => _push(context, CardEditorScreen(store: store)),
-              child: const Text('Écrire une carte'),
-            ),
-            const SizedBox(height: 10),
-            OutlinedButton(
-              style: OutlinedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(54)),
-              onPressed: () => importCardFiles(context, store),
-              child: const Text('Importer un fichier'),
             ),
           ],
         ),
@@ -169,6 +195,16 @@ class HomeScreen extends StatelessWidget {
   void _review(BuildContext context, StudyScope scope) =>
       _push(context, ReviewScreen(store: store, scope: scope));
 
+  /// Appui sur un dossier : révision de tout son contenu s'il y a quelque
+  /// chose à voir, sinon il se déplie ou se replie.
+  void _openFolder(BuildContext context, FolderNode folder) {
+    if (store.today(folder.counts).total > 0) {
+      _review(context, FolderCards(folder.path));
+    } else {
+      store.toggleExpanded(folder.path);
+    }
+  }
+
   /// Appui sur un paquet : révision s'il y a quelque chose à voir, sinon la
   /// liste de ses cartes.
   void _openDeck(BuildContext context, DeckStats stats) {
@@ -179,23 +215,29 @@ class HomeScreen extends StatelessWidget {
     }
   }
 
-  Future<void> _addMenu(BuildContext context) async {
-    final choice = await showActionSheet<String>(
+  /// Un dossier n'existe qu'avec au moins un paquet : on crée les deux.
+  Future<void> _newFolder(BuildContext context) async {
+    final values = await showFieldsDialog(
       context,
-      actions: const [
-        SheetAction('card', 'Écrire des cartes', Icons.edit_outlined),
-        SheetAction('deck', 'Nouveau paquet', Icons.style_outlined),
-        SheetAction('import', 'Importer un fichier', Icons.file_open_outlined),
+      title: 'Créer un dossier',
+      action: 'Créer',
+      fields: [
+        FieldSpec(
+          label: 'Dossier',
+          hint: 'ex. Connaissances, ou Cours/R3.07',
+          suggestions: store.folderNames,
+        ),
+        const FieldSpec(label: 'Premier paquet', hint: 'ex. La Terre'),
       ],
     );
-    if (choice == null || !context.mounted) return;
-    switch (choice) {
-      case 'card':
-        _push(context, CardEditorScreen(store: store));
-      case 'deck':
-        await _newDeck(context);
-      case 'import':
-        await importCardFiles(context, store);
+    if (values == null || !context.mounted) return;
+    try {
+      final deck = await store.createDeck(values[0], values[1]);
+      await store.reveal(deck.folder);
+      if (!context.mounted) return;
+      _push(context, CardEditorScreen(store: store, deck: deck));
+    } catch (error) {
+      if (context.mounted) showSnack(context, errorMessage(error));
     }
   }
 
@@ -233,6 +275,7 @@ class HomeScreen extends StatelessWidget {
       actions: const [
         SheetAction('review', 'Réviser', Icons.play_arrow),
         SheetAction('cards', 'Voir les cartes', Icons.list),
+        SheetAction('stats', 'Statistiques', Icons.bar_chart),
         SheetAction('add', 'Écrire des cartes', Icons.edit_outlined),
         SheetAction('rename', 'Renommer ou déplacer', Icons.drive_file_move_outline),
         SheetAction('delete', 'Supprimer', Icons.delete_outline, danger: true),
@@ -244,6 +287,8 @@ class HomeScreen extends StatelessWidget {
         _review(context, DeckCards(deck));
       case 'cards':
         _push(context, DeckScreen(store: store, deck: deck));
+      case 'stats':
+        _push(context, StatsScreen(store: store, scope: DeckCards(deck)));
       case 'add':
         _push(context, CardEditorScreen(store: store, deck: deck));
       case 'rename':
@@ -260,6 +305,7 @@ class HomeScreen extends StatelessWidget {
       title: displayFolder(folder.path),
       actions: const [
         SheetAction('review', 'Réviser tout le dossier', Icons.play_arrow),
+        SheetAction('stats', 'Statistiques', Icons.bar_chart),
         SheetAction('deck', 'Nouveau paquet ici', Icons.style_outlined),
         SheetAction('sub', 'Nouveau sous-dossier', Icons.create_new_folder_outlined),
         SheetAction('rename', 'Renommer', Icons.edit_outlined),
@@ -276,6 +322,8 @@ class HomeScreen extends StatelessWidget {
         } else {
           showSnack(context, 'Rien à réviser dans « ${folder.name} » pour l’instant');
         }
+      case 'stats':
+        _push(context, StatsScreen(store: store, scope: FolderCards(folder.path)));
       case 'deck':
         await _newDeck(context, folder: folder.path);
       case 'sub':
@@ -463,8 +511,8 @@ String _issuesText(String fileName, ImportReport report) {
 }
 
 
-/// Une ligne de l'arbre : flèche (dossiers), nom, puis les trois compteurs.
-/// Chaque niveau est un peu plus décalé vers la droite.
+/// Une ligne de l'arbre, comme AnkiDroid : flèche (dossiers), nom en gras,
+/// puis les trois compteurs. Chaque niveau est décalé vers la droite.
 class _Row extends StatelessWidget {
   const _Row({
     required this.title,
@@ -472,6 +520,7 @@ class _Row extends StatelessWidget {
     required this.onTap,
     required this.onLongPress,
     required this.depth,
+    this.onToggle,
     this.folder = false,
     this.open = false,
   });
@@ -480,6 +529,7 @@ class _Row extends StatelessWidget {
   final DueCounts counts;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
+  final VoidCallback? onToggle;
   final int depth;
   final bool folder;
   final bool open;
@@ -490,36 +540,131 @@ class _Row extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       onLongPress: onLongPress,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(12.0 + depth * 18, 13, 20, 13),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 28,
-              child: folder
-                  ? Icon(
-                      open ? Icons.expand_more : Icons.chevron_right,
-                      size: 22,
-                      color: scheme.onSurfaceVariant,
-                    )
-                  : null,
-            ),
-            Expanded(
-              child: Text(
-                title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: folder && depth == 0 ? 17 : 16,
-                  fontWeight: folder ? FontWeight.w700 : FontWeight.w400,
-                  color: scheme.onSurface,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 62),
+        child: Padding(
+          padding: EdgeInsets.only(left: 6.0 + depth * 24, right: 16),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 44,
+                height: 62,
+                child: folder
+                    ? InkResponse(
+                        onTap: onToggle,
+                        radius: 22,
+                        child: Icon(
+                          open ? Icons.expand_more : Icons.chevron_right,
+                          size: 26,
+                          color: scheme.onSurface,
+                        ),
+                      )
+                    : null,
+              ),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSurface,
+                  ),
+                ),
+              ),
+              CountsRow(counts, fontSize: 18, columnWidth: 34),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Une action du menu du bouton +.
+class _DialAction {
+  const _DialAction(this.label, this.icon, this.onPressed);
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onPressed;
+}
+
+/// Le bouton + d'AnkiDroid : un appui déplie une pile d'actions au-dessus de
+/// lui (la plus utilisée tout en bas, près du pouce), un autre appui la
+/// replie.
+class _SpeedDial extends StatelessWidget {
+  const _SpeedDial({
+    required this.open,
+    required this.onToggle,
+    required this.actions,
+    required this.onAction,
+  });
+
+  final bool open;
+  final VoidCallback onToggle;
+  final List<_DialAction> actions;
+
+  /// Appelé avant chaque action (pour refermer le menu).
+  final VoidCallback onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        if (open)
+          for (final action in actions)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: Material(
+                color: scheme.surfaceContainerHighest,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(26)),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: () {
+                    onAction();
+                    action.onPressed();
+                  },
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(action.icon, size: 24, color: scheme.onSurface),
+                        const SizedBox(width: 16),
+                        Text(
+                          action.label,
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600,
+                            color: scheme.onSurface,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
-            CountsRow(counts),
-          ],
+        FloatingActionButton(
+          tooltip: open ? 'Fermer' : 'Ajouter',
+          backgroundColor: scheme.surfaceContainerHighest,
+          foregroundColor: scheme.onSurface,
+          elevation: 0,
+          onPressed: onToggle,
+          child: AnimatedRotation(
+            turns: open ? 0.125 : 0,
+            duration: const Duration(milliseconds: 180),
+            child: const Icon(Icons.add, size: 30),
+          ),
         ),
-      ),
+      ],
     );
   }
 }

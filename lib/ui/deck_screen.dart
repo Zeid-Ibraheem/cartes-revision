@@ -9,6 +9,7 @@ import 'card_editor_screen.dart';
 import 'common.dart';
 import 'home_screen.dart';
 import 'review_screen.dart';
+import 'stats_screen.dart';
 import 'theme.dart';
 
 /// Un paquet : ses compteurs, le bouton de révision et la liste de ses cartes.
@@ -87,12 +88,17 @@ class _DeckScreenState extends State<DeckScreen> {
       context,
       title: '${displayFolder(_deck.folder)} › ${_deck.name}',
       actions: const [
+        SheetAction('stats', 'Statistiques', Icons.bar_chart),
         SheetAction('rename', 'Renommer ou déplacer', Icons.drive_file_move_outline),
         SheetAction('delete', 'Supprimer le paquet', Icons.delete_outline,
             danger: true),
       ],
     );
     if (choice == null || !mounted) return;
+    if (choice == 'stats') {
+      await _open(StatsScreen(store: _store, scope: DeckCards(_deck)));
+      return;
+    }
     if (choice == 'rename') {
       final deck = await renameDeck(context, _store, _deck);
       if (deck == null) return;

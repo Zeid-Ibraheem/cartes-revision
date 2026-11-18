@@ -11,6 +11,7 @@ lib/
 │   ├── card_editor_screen.dart  écrire ou corriger une carte
 │   ├── review_screen.dart       la séance de révision
 │   ├── settings_screen.dart     les réglages
+│   ├── stats_screen.dart        les statistiques et leurs graphiques
 │   ├── theme.dart               toutes les couleurs de l'appli
 │   └── common.dart              blocs, compteurs, menus partagés
 ├── data/                      stockage et moteur
@@ -25,6 +26,7 @@ lib/
     ├── reminder_plan.dart     quand prévenir, avec quel message
     ├── card_file.dart         lecture des fichiers de cartes
     ├── folder_path.dart       dossiers imbriqués (chemins « Cours/R3.07 »)
+    ├── stats.dart             calcul des statistiques
     ├── settings.dart          réglages, valeurs par défaut et bornes
     └── format.dart            délais en français
 ```

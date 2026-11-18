@@ -279,6 +279,46 @@ void main() {
     expect(reopened.isExpanded('Études/Cours/R3.07'), isTrue);
   });
 
+  test('historique des réponses par dossier et totaux du jour', () async {
+    await db.importFile(
+        file('# dossier: Cours/R3.07\n# paquet: P\na\t1\n'
+            '# dossier: Connaissances\n# paquet: P\nb\t2\n'),
+        now);
+    final cards = await db.cards();
+    for (final (card, grade, ms) in [
+      (cards[0], Grade.good, 12000),
+      (cards[1], Grade.again, 3000),
+    ]) {
+      await db.recordReview(
+          before: card,
+          after: card.memory,
+          grade: grade,
+          at: now,
+          durationMs: ms);
+    }
+    final all = await db.reviews(since: now.subtract(const Duration(days: 1)));
+    expect(all.map((e) => e.grade), [Grade.good, Grade.again]);
+    expect(all.first.wasNew, isTrue);
+    expect(all.first.durationMs, 12000);
+    final cours = await db.reviews(
+        since: now.subtract(const Duration(days: 1)), folder: 'Cours');
+    expect(cours.single.grade, Grade.good);
+    final deck = await db.reviews(
+        since: now.subtract(const Duration(days: 1)), deckId: cards[1].deckId);
+    expect(deck.single.grade, Grade.again);
+    expect(await db.reviews(since: now.add(const Duration(hours: 1))), isEmpty);
+
+    final totals = await db.totalsSince(now.subtract(const Duration(hours: 1)));
+    expect(totals.answers, 2);
+    expect(totals.durationMs, 15000);
+
+    final store = await AppStore.open(database: db, clock: () => now);
+    expect(store.todayTotals.answers, 2);
+    final report = await store.stats(const FolderCards('Cours'), periodDays: 7);
+    expect(report.period.answers, 1);
+    expect(report.collection.total, 1);
+  });
+
   test('réglages enregistrés et relus', () async {
     await db.saveSettings(const AppSettings(newPerDay: 7).toMap());
     expect(AppSettings.fromMap(await db.settings()).newPerDay, 7);
