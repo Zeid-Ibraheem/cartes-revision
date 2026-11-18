@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../data/store.dart';
+import '../domain/folder_path.dart';
 import '../domain/format.dart';
 import '../domain/models.dart';
 import '../domain/study_session.dart';
@@ -84,7 +85,7 @@ class _DeckScreenState extends State<DeckScreen> {
   Future<void> _deckMenu() async {
     final choice = await showActionSheet<String>(
       context,
-      title: '${_deck.folder} › ${_deck.name}',
+      title: '${displayFolder(_deck.folder)} › ${_deck.name}',
       actions: const [
         SheetAction('rename', 'Renommer ou déplacer', Icons.drive_file_move_outline),
         SheetAction('delete', 'Supprimer le paquet', Icons.delete_outline,
@@ -94,7 +95,9 @@ class _DeckScreenState extends State<DeckScreen> {
     if (choice == null || !mounted) return;
     if (choice == 'rename') {
       final deck = await renameDeck(context, _store, _deck);
-      if (deck != null && mounted) setState(() => _deck = deck);
+      if (deck == null) return;
+      await _store.reveal(deck.folder);
+      if (mounted) setState(() => _deck = deck);
       return;
     }
     final deleted = await deleteDeck(context, _store, _deck);
@@ -113,7 +116,7 @@ class _DeckScreenState extends State<DeckScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(_deck.name),
-            Text(_deck.folder,
+            Text(displayFolder(_deck.folder),
                 style: theme.textTheme.bodySmall
                     ?.copyWith(color: scheme.onSurfaceVariant)),
           ],

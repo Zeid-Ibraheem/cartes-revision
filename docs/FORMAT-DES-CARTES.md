@@ -14,6 +14,7 @@ Autre question<TABULATION>Ligne 1<br>Ligne 2
 | Ce que tu écris | Ce que ça fait |
 |---|---|
 | `# dossier: R3.07` | Les cartes suivantes vont dans ce dossier. Repart du paquet par défaut. |
+| `# dossier: Cours/R3.07` | Dossier dans un dossier : R3.07 rangé dans Cours. Autant de niveaux que tu veux, séparés par `/`. Les dossiers manquants sont créés. |
 | `# paquet: Contrôle 1` | Les cartes suivantes vont dans ce paquet. |
 | `Question` + tabulation + `Réponse` | Une carte. |
 | `<br>` | Un retour à la ligne dans la question ou la réponse. |
@@ -22,6 +23,7 @@ Autre question<TABULATION>Ligne 1<br>Ligne 2
 
 - Sans `# dossier:`, les cartes vont dans le dossier « Divers ».
 - Sans `# paquet:`, le paquet porte le nom du fichier.
+- Le chemin du dossier doit être écrit en entier : si R3.07 est rangé dans Cours, écris `# dossier: Cours/R3.07`. Un fichier qui dit seulement `# dossier: R3.07` crée un dossier R3.07 tout en haut, à côté de Cours.
 - Un fichier peut contenir plusieurs dossiers et plusieurs paquets.
 - Majuscules et espaces autour des deux-points n'ont pas d'importance (`# Dossier : R3.07` marche).
 - Une ligne sans tabulation, ou avec une question ou une réponse vide, est ignorée. L'appli le dit à la fin de l'import, avec le numéro de la ligne.

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import '../domain/card_file.dart';
+import '../domain/folder_path.dart';
 import '../domain/models.dart';
 import '../domain/reminder_plan.dart';
 import '../domain/settings.dart';
@@ -24,13 +25,15 @@ class AllCards extends StudyScope {
   String get label => 'Tout';
 }
 
+/// Un dossier et tout ce qu'il contient, sous-dossiers compris.
 class FolderCards extends StudyScope {
   const FolderCards(this.folder);
 
+  /// Chemin du dossier (« Cours/R3.07 »).
   final String folder;
 
   @override
-  String get label => folder;
+  String get label => folderLeaf(folder);
 }
 
 class DeckCards extends StudyScope {
@@ -42,17 +45,68 @@ class DeckCards extends StudyScope {
   String get label => deck.name;
 }
 
-/// Un dossier et ses paquets, pour l'écran d'accueil.
-class FolderStats {
-  FolderStats(this.name);
+/// Un dossier de l'arbre : ses sous-dossiers et ses paquets. Les compteurs
+/// additionnent tout ce qu'il contient, à tous les niveaux.
+class FolderNode {
+  FolderNode(this.path);
 
-  final String name;
+  /// Chemin complet (« Cours/R3.07 »).
+  final String path;
+  final List<FolderNode> folders = [];
   final List<DeckStats> decks = [];
 
-  int get total => decks.fold(0, (sum, deck) => sum + deck.total);
+  /// Nom affiché : le dernier niveau du chemin.
+  String get name => folderLeaf(path);
 
-  DueCounts get counts =>
-      decks.fold(const DueCounts(), (sum, deck) => sum + deck.counts);
+  int get depth => folderDepth(path);
+
+  int get total =>
+      decks.fold(0, (sum, deck) => sum + deck.total) +
+      folders.fold(0, (sum, folder) => sum + folder.total);
+
+  /// Nombre de paquets, à tous les niveaux.
+  int get deckCount =>
+      decks.length + folders.fold(0, (sum, folder) => sum + folder.deckCount);
+
+  DueCounts get counts => folders.fold(
+        decks.fold(const DueCounts(), (sum, deck) => sum + deck.counts),
+        (sum, folder) => sum + folder.counts,
+      );
+}
+
+/// Range les paquets en arbre de dossiers, triés par nom. Les dossiers
+/// intermédiaires sans paquet propre (« Cours » dans « Cours/R3.07 ») sont
+/// créés au passage.
+List<FolderNode> buildFolderTree(Iterable<DeckStats> stats) {
+  final byPath = <String, FolderNode>{};
+  final roots = <FolderNode>[];
+  FolderNode node(String path) {
+    final known = byPath[path];
+    if (known != null) return known;
+    final created = byPath[path] = FolderNode(path);
+    final parent = folderParent(path);
+    if (parent.isEmpty) {
+      roots.add(created);
+    } else {
+      node(parent).folders.add(created);
+    }
+    return created;
+  }
+
+  for (final deck in stats) {
+    node(deck.deck.folder).decks.add(deck);
+  }
+  int byName(String a, String b) => a.toLowerCase().compareTo(b.toLowerCase());
+  void sort(List<FolderNode> nodes) {
+    nodes.sort((a, b) => byName(a.name, b.name));
+    for (final n in nodes) {
+      n.decks.sort((a, b) => byName(a.deck.name, b.deck.name));
+      sort(n.folders);
+    }
+  }
+
+  sort(roots);
+  return roots;
 }
 
 /// L'état de l'appli, partagé par tous les écrans : réglages, paquets et
@@ -68,7 +122,8 @@ class AppStore extends ChangeNotifier {
   final ReminderService? _reminders;
   Future<void> _reminderUpdate = Future.value();
   AppSettings _settings;
-  List<FolderStats> _folders = const [];
+  List<FolderNode> _folders = const [];
+  Set<String> _expanded = {};
   int _newSeenToday = 0;
 
   static Future<AppStore> open({
@@ -79,12 +134,15 @@ class AppStore extends ChangeNotifier {
     final db = database ?? await AppDatabase.open();
     final settings = AppSettings.fromMap(await db.settings());
     final store = AppStore._(db, settings, clock ?? DateTime.now, reminders);
+    final expanded = (await db.settings())[_kExpanded] ?? '';
+    store._expanded = expanded.split('\n').where((p) => p.isNotEmpty).toSet();
     await store.refresh();
     return store;
   }
 
-  // Clé enregistrée dans la table des réglages, hors des réglages visibles.
+  // Clés enregistrées dans la table des réglages, hors des réglages visibles.
   static const _kPermissionAsked = 'notifications_autorisation_demandee';
+  static const _kExpanded = 'dossiers_ouverts';
 
   /// Au premier démarrage, demande l'autorisation des notifications si le
   /// rappel est actif. Une seule fois : ensuite, on ne la redemande que si
@@ -140,7 +198,27 @@ class AppStore extends ChangeNotifier {
   AppSettings get settings => _settings;
 
   /// Les dossiers et leurs paquets, triés par nom.
-  List<FolderStats> get folders => _folders;
+  List<FolderNode> get folders => _folders;
+
+  /// Le dossier est déplié sur l'accueil. Par défaut, tout est replié.
+  bool isExpanded(String path) => _expanded.contains(path);
+
+  /// Déplie ou replie un dossier. Retenu d'une ouverture à l'autre.
+  Future<void> toggleExpanded(String path) async {
+    if (!_expanded.remove(path)) _expanded.add(path);
+    notifyListeners();
+    await _db.saveSettings({_kExpanded: _expanded.join('\n')});
+  }
+
+  /// Déplie un dossier et tous ceux qui le contiennent (pour montrer un
+  /// paquet qui vient d'y être rangé).
+  Future<void> reveal(String path) async {
+    final before = _expanded.length;
+    _expanded.addAll(folderAncestry(path));
+    if (_expanded.length == before) return;
+    notifyListeners();
+    await _db.saveSettings({_kExpanded: _expanded.join('\n')});
+  }
 
   bool get isEmpty => _folders.isEmpty;
 
@@ -159,10 +237,18 @@ class AppStore extends ChangeNotifier {
       _folders.fold(const DueCounts(), (sum, folder) => sum + folder.counts);
 
   /// Tous les paquets, dans l'ordre de l'accueil.
-  List<Deck> get decks => [
-        for (final folder in _folders)
-          for (final stats in folder.decks) stats.deck,
-      ];
+  List<Deck> get decks {
+    final decks = <Deck>[];
+    void walk(List<FolderNode> nodes) {
+      for (final node in nodes) {
+        walk(node.folders);
+        decks.addAll(node.decks.map((stats) => stats.deck));
+      }
+    }
+
+    walk(_folders);
+    return decks;
+  }
 
   /// Relit les compteurs dans la base.
   Future<void> refresh() async {
@@ -171,13 +257,7 @@ class AppStore extends ChangeNotifier {
     final dayEnd = studyDayEnd(now, _settings.dayStartHour);
     final stats = await _db.deckStats(dayEnd);
     _newSeenToday = await _db.newCardsSeenSince(dayStart);
-    final byName = <String, FolderStats>{};
-    for (final deck in stats) {
-      byName.putIfAbsent(deck.deck.folder, () => FolderStats(deck.deck.folder))
-          .decks
-          .add(deck);
-    }
-    _folders = byName.values.toList();
+    _folders = buildFolderTree(stats);
     notifyListeners();
     await _updateReminders(newLeftToday);
   }
@@ -217,14 +297,16 @@ class AppStore extends ChangeNotifier {
   // ---------------------------------------------------------------- Paquets
 
   Future<Deck> createDeck(String folder, String name) async {
-    final deck = await _db.createDeck(cleanName(folder), cleanName(name), _clock());
+    final deck = await _db.createDeck(
+        _folderOrDefault(folder), cleanName(name), _clock());
     await refresh();
     return deck;
   }
 
   /// Renomme un paquet ou le déplace dans un autre dossier.
   Future<Deck> updateDeck(Deck deck, String folder, String name) async {
-    final updated = Deck(id: deck.id, folder: cleanName(folder), name: cleanName(name));
+    final updated = Deck(
+        id: deck.id, folder: _folderOrDefault(folder), name: cleanName(name));
     await _db.updateDeck(updated.id, updated.folder, updated.name);
     await refresh();
     return updated;
@@ -235,9 +317,23 @@ class AppStore extends ChangeNotifier {
     await refresh();
   }
 
-  Future<void> renameFolder(String from, String to) async {
-    await _db.renameFolder(from, cleanName(to));
+  /// Renomme ou déplace un dossier ([to] est le nouveau chemin complet).
+  /// Ses sous-dossiers et paquets suivent. Renvoie le nouveau chemin.
+  Future<String> moveFolder(String from, String to) async {
+    final path = normalizeFolder(to);
+    if (path.isEmpty) throw const FormatException('Le nom est vide.');
+    if (path == from) return path;
+    await _db.renameFolder(from, path);
+    // Les dossiers dépliés le restent sous leur nouveau nom.
+    final moved = {
+      for (final p in _expanded)
+        isInFolder(p, from) ? path + p.substring(from.length) : p,
+      ...folderAncestry(path),
+    };
+    _expanded = moved;
+    await _db.saveSettings({_kExpanded: _expanded.join('\n')});
     await refresh();
+    return path;
   }
 
   Future<void> deleteFolder(String folder) async {
@@ -245,8 +341,25 @@ class AppStore extends ChangeNotifier {
     await refresh();
   }
 
-  /// Tous les noms de dossiers, pour les proposer à la saisie.
-  List<String> get folderNames => [for (final folder in _folders) folder.name];
+  /// Tous les chemins de dossiers, dans l'ordre de l'accueil, pour les
+  /// proposer à la saisie.
+  List<String> get folderNames {
+    final paths = <String>[];
+    void walk(List<FolderNode> nodes) {
+      for (final node in nodes) {
+        paths.add(node.path);
+        walk(node.folders);
+      }
+    }
+
+    walk(_folders);
+    return paths;
+  }
+
+  static String _folderOrDefault(String folder) {
+    final path = normalizeFolder(folder);
+    return path.isEmpty ? defaultFolder : path;
+  }
 
   // ---------------------------------------------------------------- Cartes
 

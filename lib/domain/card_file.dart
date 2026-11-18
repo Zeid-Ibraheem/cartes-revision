@@ -3,6 +3,8 @@ library;
 
 import 'dart:convert';
 
+import 'folder_path.dart';
+
 /// Dossier utilisé quand le fichier n'en indique pas.
 const defaultFolder = 'Divers';
 
@@ -104,7 +106,10 @@ ParsedFile parseCardFile(String text, {required String fallbackDeck}) {
       final match = _directive.firstMatch(trimmed);
       if (match == null) continue; // simple commentaire
       final keyword = match.group(1)!.toLowerCase();
-      final value = _oneLine(match.group(2)!);
+      // Un dossier peut avoir plusieurs niveaux : « Cours/R3.07 ».
+      final value = keyword == 'dossier'
+          ? normalizeFolder(match.group(2)!)
+          : _oneLine(match.group(2)!);
       if (value.isEmpty) {
         issues.add(FileIssue(lineNumber, 'nom manquant après « # $keyword: »'));
       } else if (keyword == 'dossier') {

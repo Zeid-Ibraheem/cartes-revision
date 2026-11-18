@@ -50,21 +50,23 @@ void main() {
     expect(reminders, hasLength(reminderDaysAhead - 1));
   });
 
-  test('cartes à revoir comptées à l’heure du rappel, pas avant', () {
+  test('même compte que l’appli : toute la journée de révision', () {
     final reminders = plan(dueTimes: [
       DateTime(2026, 11, 16, 9).toUtc(), // déjà en retard
       DateTime(2026, 11, 16, 18).toUtc(), // avant 19 h aujourd'hui
-      DateTime(2026, 11, 16, 21).toUtc(), // après le rappel : demain
+      DateTime(2026, 11, 16, 21).toUtc(), // après 19 h, même journée
+      DateTime(2026, 11, 17, 3).toUtc(), // 3 h : encore la journée de lundi
+      DateTime(2026, 11, 17, 5).toUtc(), // 5 h : journée de mardi
       DateTime(2026, 11, 20, 10).toUtc(), // vendredi
     ]);
     expect(reminders.map((r) => r.title).take(5), [
-      '2 cartes à réviser', // lundi
-      '3 cartes à réviser', // mardi
-      '3 cartes à réviser', // mercredi
-      '3 cartes à réviser', // jeudi
-      '4 cartes à réviser', // vendredi
+      '4 cartes à réviser', // lundi
+      '5 cartes à réviser', // mardi
+      '5 cartes à réviser', // mercredi
+      '5 cartes à réviser', // jeudi
+      '6 cartes à réviser', // vendredi
     ]);
-    expect(reminders.first.body, '2 à revoir');
+    expect(reminders.first.body, '4 à revoir');
   });
 
   test('nouvelles : reste du jour aujourd’hui, limite pleine ensuite', () {

@@ -214,6 +214,71 @@ void main() {
     expect(reminders.permissionRequests, 1);
   });
 
+  test('dossiers imbriqués : cartes, déplacement, suppression', () async {
+    await db.importFile(
+        file('# dossier: Cours/R3.07\n# paquet: C1\na\t1\n'
+            '# dossier: Cours/R3.06\n# paquet: C1\nb\t2\n'
+            '# dossier: Coursier\n# paquet: P\nc\t3\n'
+            '# dossier: Connaissances/Électricité\n# paquet: P\nd\t4\n'),
+        now);
+    // Un dossier comprend ses sous-dossiers, pas un dossier au nom voisin.
+    expect((await db.cards(folder: 'Cours')).map((c) => c.front), ['a', 'b']);
+    expect((await db.cards(folder: 'Cours/R3.07')).single.front, 'a');
+
+    // Ranger un dossier dans un autre : tout son contenu suit.
+    await db.renameFolder('Cours', 'Études/Cours');
+    expect(await db.cards(folder: 'Cours'), isEmpty);
+    expect((await db.cards(folder: 'Études/Cours/R3.06')).single.front, 'b');
+    expect((await db.cards(folder: 'Coursier')).single.front, 'c');
+
+    // Accents dans les noms : les longueurs restent justes.
+    await db.renameFolder('Connaissances/Électricité', 'Connaissances/Physique');
+    expect((await db.cards(folder: 'Connaissances/Physique')).single.front, 'd');
+
+    // Pas dans lui-même.
+    await expectLater(db.renameFolder('Études', 'Études/Cours/x'),
+        throwsA(isA<FolderIntoItself>()));
+
+    // Rejoindre un dossier existant : les contenus se rejoignent.
+    await db.renameFolder('Coursier', 'Connaissances');
+    expect((await db.cards(folder: 'Connaissances')).map((c) => c.front),
+        ['c', 'd']);
+
+    // Supprimer un dossier supprime tout ce qu'il contient.
+    await db.deleteFolder('Études');
+    expect((await db.cards()).map((c) => c.front), ['c', 'd']);
+  });
+
+  test('arbre des dossiers et compteurs additionnés', () async {
+    final store = await AppStore.open(database: db, clock: () => now);
+    await store.importText(
+        '# dossier: Cours/R3.07\n# paquet: C2\na\t1\n# paquet: C1\nb\t2\n'
+        '# dossier: Cours\n# paquet: Général\nc\t3\n'
+        '# dossier: Connaissances/Physique\n# paquet: La Terre\nd\t4\n',
+        fallbackDeck: 'f');
+    final roots = store.folders;
+    expect(roots.map((f) => f.name), ['Connaissances', 'Cours']);
+    final cours = roots[1];
+    expect(cours.folders.single.path, 'Cours/R3.07');
+    expect(cours.decks.single.deck.name, 'Général');
+    expect(cours.folders.single.decks.map((d) => d.deck.name), ['C1', 'C2']);
+    expect(cours.total, 3);
+    expect(cours.counts.fresh, 3);
+    expect(cours.deckCount, 3);
+    expect(roots[0].decks, isEmpty, reason: 'dossier intermédiaire');
+    expect(store.folderNames,
+        ['Connaissances', 'Connaissances/Physique', 'Cours', 'Cours/R3.07']);
+
+    // Replié par défaut ; l'état est retenu, et suit un déplacement.
+    expect(store.isExpanded('Cours/R3.07'), isFalse);
+    await store.toggleExpanded('Cours/R3.07');
+    await store.moveFolder('Cours', 'Études/Cours');
+    expect(store.isExpanded('Études/Cours/R3.07'), isTrue);
+    expect(store.isExpanded('Études'), isTrue, reason: 'montré après déplacement');
+    final reopened = await AppStore.open(database: db, clock: () => now);
+    expect(reopened.isExpanded('Études/Cours/R3.07'), isTrue);
+  });
+
   test('réglages enregistrés et relus', () async {
     await db.saveSettings(const AppSettings(newPerDay: 7).toMap());
     expect(AppSettings.fromMap(await db.settings()).newPerDay, 7);

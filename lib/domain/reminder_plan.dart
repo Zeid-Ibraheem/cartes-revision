@@ -71,9 +71,12 @@ List<PlannedReminder> planReminders({
     final at = DateTime(local.year, local.month, local.day + day, hour, minute);
     if (!at.isAfter(local)) continue;
 
+    // Même règle que les compteurs de l'appli : une carte compte pour toute
+    // sa journée de révision (jusqu'à 4 h le lendemain par défaut).
+    final dayEnd = studyDayEnd(at, settings.dayStartHour);
     var due = 0;
     for (final time in dueTimes) {
-      if (!time.isAfter(at)) due++;
+      if (time.isBefore(dayEnd)) due++;
     }
     // Nouvelles : la limite du jour s'applique ; un autre jour de révision
     // que celui en cours repart avec la limite pleine.

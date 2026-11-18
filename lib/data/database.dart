@@ -2,6 +2,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
 import '../domain/card_file.dart';
+import '../domain/folder_path.dart';
 import '../domain/models.dart';
 import '../domain/study_session.dart';
 
@@ -25,6 +26,18 @@ class DeckStats {
   int get due => counts.due;
 }
 
+/// Un dossier ne peut pas être rangé dans lui-même ni dans un de ses
+/// sous-dossiers.
+class FolderIntoItself implements Exception {
+  const FolderIntoItself(this.folder);
+
+  final String folder;
+
+  @override
+  String toString() =>
+      'Impossible de ranger « ${displayFolder(folder)} » dans lui-même.';
+}
+
 /// Le dossier d'arrivée contient déjà un paquet du même nom.
 class FolderNameTaken implements Exception {
   const FolderNameTaken(this.folder);
@@ -32,8 +45,8 @@ class FolderNameTaken implements Exception {
   final String folder;
 
   @override
-  String toString() =>
-      'Le dossier « $folder » contient déjà un paquet du même nom.';
+  String toString() => 'Le dossier « ${displayFolder(folder)} » contient déjà '
+      'un paquet du même nom.';
 }
 
 /// Le paquet existe déjà sous ce dossier et ce nom.
@@ -255,24 +268,42 @@ class AppDatabase {
   Future<void> deleteDeck(int id) =>
       _db.delete('decks', where: 'id = ?', whereArgs: [id]);
 
-  /// Renomme un dossier : tous ses paquets changent de dossier.
+  // Un dossier et tout ce qu'il contient : le dossier lui-même, et tout
+  // chemin qui commence par « dossier/ ». Les longueurs sont comptées par
+  // SQLite (en caractères), pas par Dart : pas de décalage avec les accents.
+  static const _inFolder =
+      '(folder = ? OR substr(folder, 1, length(?)) = ?)';
+
+  static List<Object?> _inFolderArgs(String folder) {
+    final prefix = '$folder$folderSeparator';
+    return [folder, prefix, prefix];
+  }
+
+  /// Renomme ou déplace un dossier, avec tous ses sous-dossiers et paquets.
+  /// Si le dossier d'arrivée existe déjà, les contenus se rejoignent.
   Future<void> renameFolder(String from, String to) async {
+    if (isInFolder(to, from)) throw FolderIntoItself(from);
     try {
-      await _db.update('decks', {'folder': to},
-          where: 'folder = ?', whereArgs: [from]);
+      await _db.rawUpdate(
+        'UPDATE decks SET folder = ? || substr(folder, length(?) + 1) '
+        'WHERE $_inFolder',
+        [to, from, ..._inFolderArgs(from)],
+      );
     } on DatabaseException catch (error) {
       if (error.isUniqueConstraintError()) throw FolderNameTaken(to);
       rethrow;
     }
   }
 
-  /// Supprime un dossier : ses paquets, leurs cartes et leur historique.
-  Future<void> deleteFolder(String folder) =>
-      _db.delete('decks', where: 'folder = ?', whereArgs: [folder]);
+  /// Supprime un dossier et tout ce qu'il contient : sous-dossiers, paquets,
+  /// cartes et historique.
+  Future<void> deleteFolder(String folder) => _db.rawDelete(
+      'DELETE FROM decks WHERE $_inFolder', _inFolderArgs(folder));
 
   // ---------------------------------------------------------------- Cartes
 
-  /// Les cartes d'un paquet, d'un dossier, ou de tout (les deux à `null`).
+  /// Les cartes d'un paquet, d'un dossier (sous-dossiers compris), ou de tout
+  /// (les deux à `null`).
   Future<List<Flashcard>> cards({int? deckId, String? folder}) async {
     final String? where;
     final List<Object?> args;
@@ -280,8 +311,8 @@ class AppDatabase {
       where = 'deck_id = ?';
       args = [deckId];
     } else if (folder != null) {
-      where = 'deck_id IN (SELECT id FROM decks WHERE folder = ?)';
-      args = [folder];
+      where = 'deck_id IN (SELECT id FROM decks WHERE $_inFolder)';
+      args = _inFolderArgs(folder);
     } else {
       where = null;
       args = const [];

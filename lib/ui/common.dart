@@ -13,7 +13,10 @@ void showSnack(BuildContext context, String message) {
 /// Message lisible pour une erreur attendue (nom déjà pris…) ou inattendue.
 String errorMessage(Object error) {
   final text = error.toString();
-  return text.startsWith('Exception: ') ? text.substring(11) : text;
+  for (final prefix in const ['Exception: ', 'FormatException: ']) {
+    if (text.startsWith(prefix)) return text.substring(prefix.length);
+  }
+  return text;
 }
 
 /// Demande une confirmation. Renvoie `true` si l'utilisateur accepte.

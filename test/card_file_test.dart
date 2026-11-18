@@ -79,6 +79,14 @@ void main() {
     expect(cards[1].back, 'C\nD');
   });
 
+  test('dossiers sur plusieurs niveaux', () {
+    final file = parseCardFile(
+      '# dossier: Cours / R3.07\n# paquet: C1\nQ\tR\n# dossier: Connaissances › Physique\nq\tr\n',
+      fallbackDeck: 'f',
+    );
+    expect(file.decks.map((d) => d.folder), ['Cours/R3.07', 'Connaissances/Physique']);
+  });
+
   test('nettoyage des saisies à la main', () {
     expect(cleanName('  R3.07   Contrôle\n1 '), 'R3.07 Contrôle 1');
     expect(cleanSide('  ligne 1  \r\n  ligne 2 \t '), 'ligne 1\nligne 2');

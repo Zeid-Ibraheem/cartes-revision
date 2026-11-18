@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../data/store.dart';
+import '../domain/folder_path.dart';
 import '../domain/models.dart';
 import 'common.dart';
 
@@ -74,7 +75,8 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
       title: 'Dans quel paquet ?',
       actions: [
         for (final deck in _store.decks)
-          SheetAction(deck, '${deck.folder} › ${deck.name}', Icons.style_outlined),
+          SheetAction(deck, '${displayFolder(deck.folder)} › ${deck.name}',
+              Icons.style_outlined),
         const SheetAction(create, 'Nouveau paquet…', Icons.add),
       ],
     );
@@ -90,7 +92,7 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
       fields: [
         FieldSpec(
           label: 'Dossier',
-          hint: 'ex. R3.07',
+          hint: 'ex. Cours/R3.07 (niveaux séparés par /)',
           initial: _deck?.folder ?? '',
           suggestions: _store.folderNames,
         ),
@@ -100,6 +102,7 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
     if (values == null || !mounted) return;
     try {
       final deck = await _store.createDeck(values[0], values[1]);
+      await _store.reveal(deck.folder);
       if (mounted) setState(() => _deck = deck);
     } catch (error) {
       if (mounted) showSnack(context, errorMessage(error));
@@ -202,7 +205,7 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
-                                        Text(deck.folder,
+                                        Text(displayFolder(deck.folder),
                                             style: theme.textTheme.bodySmall
                                                 ?.copyWith(
                                                     color: scheme

@@ -5,6 +5,14 @@ Les changements de chaque version. Format : [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+### Ajouté
+- Dossiers dans des dossiers, sur autant de niveaux que tu veux (ex. Cours › R3.07 › Contrôle 1, Connaissances › Physique). Chaque dossier additionne les compteurs de tout ce qu'il contient.
+- Accueil en arbre : un appui sur un dossier le déplie ou le replie (tout est replié au départ, l'appli retient ce que tu ouvres). Appui long : réviser tout le dossier, nouveau paquet, nouveau sous-dossier, renommer, déplacer dans un autre dossier, supprimer.
+- Fichiers de cartes : `# dossier: Cours/R3.07` range directement dans un sous-dossier.
+
+### Corrigé
+- La notification comptait seulement les cartes dues avant l'heure du rappel ; elle compte maintenant toute la journée de révision, comme l'appli.
+
 ## [0.3.0] - 2026-11-17
 
 ### Ajouté

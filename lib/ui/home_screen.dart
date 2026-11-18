@@ -5,6 +5,7 @@ import '../app_info.dart';
 import '../data/database.dart';
 import '../data/store.dart';
 import '../domain/card_file.dart';
+import '../domain/folder_path.dart';
 import '../domain/models.dart';
 import '../domain/study_session.dart';
 import 'card_editor_screen.dart';
@@ -71,6 +72,33 @@ class HomeScreen extends StatelessWidget {
   Widget _list(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final rows = <Widget>[];
+    void addFolder(FolderNode folder) {
+      final open = store.isExpanded(folder.path);
+      if (folder.depth == 0) rows.add(const SizedBox(height: 8));
+      rows.add(_Row(
+        title: folder.name,
+        depth: folder.depth,
+        folder: true,
+        open: open,
+        counts: store.today(folder.counts),
+        onTap: () => store.toggleExpanded(folder.path),
+        onLongPress: () => _folderMenu(context, folder),
+      ));
+      if (!open) return;
+      folder.folders.forEach(addFolder);
+      for (final stats in folder.decks) {
+        rows.add(_Row(
+          title: stats.deck.name,
+          depth: folder.depth + 1,
+          counts: store.today(stats.counts),
+          onTap: () => _openDeck(context, stats),
+          onLongPress: () => _deckMenu(context, stats.deck),
+        ));
+      }
+    }
+
+    store.folders.forEach(addFolder);
     return ListView(
       padding: const EdgeInsets.only(bottom: 96),
       children: [
@@ -82,7 +110,7 @@ class HomeScreen extends StatelessWidget {
                 child: Text(
                   store.newLeftToday == 0 && store.counts.fresh > 0
                       ? 'Nouvelles cartes : limite du jour atteinte'
-                      : 'Appui long sur un paquet pour le modifier',
+                      : 'Appui long pour réviser ou modifier',
                   style: theme.textTheme.bodySmall
                       ?.copyWith(color: scheme.onSurfaceVariant),
                 ),
@@ -91,24 +119,7 @@ class HomeScreen extends StatelessWidget {
             ],
           ),
         ),
-        for (final folder in store.folders) ...[
-          const SizedBox(height: 12),
-          _Row(
-            title: folder.name,
-            bold: true,
-            counts: store.today(folder.counts),
-            onTap: () => _openFolder(context, folder),
-            onLongPress: () => _folderMenu(context, folder),
-          ),
-          for (final stats in folder.decks)
-            _Row(
-              title: stats.deck.name,
-              indent: true,
-              counts: store.today(stats.counts),
-              onTap: () => _openDeck(context, stats),
-              onLongPress: () => _deckMenu(context, stats.deck),
-            ),
-        ],
+        ...rows,
       ],
     );
   }
@@ -158,15 +169,6 @@ class HomeScreen extends StatelessWidget {
   void _review(BuildContext context, StudyScope scope) =>
       _push(context, ReviewScreen(store: store, scope: scope));
 
-  /// Appui sur un dossier : révision s'il y a quelque chose à voir.
-  void _openFolder(BuildContext context, FolderStats folder) {
-    if (store.today(folder.counts).total > 0) {
-      _review(context, FolderCards(folder.name));
-    } else {
-      showSnack(context, 'Rien à réviser dans « ${folder.name} » pour l’instant');
-    }
-  }
-
   /// Appui sur un paquet : révision s'il y a quelque chose à voir, sinon la
   /// liste de ses cartes.
   void _openDeck(BuildContext context, DeckStats stats) {
@@ -205,7 +207,7 @@ class HomeScreen extends StatelessWidget {
       fields: [
         FieldSpec(
           label: 'Dossier',
-          hint: 'ex. R3.07',
+          hint: 'ex. Cours/R3.07 (niveaux séparés par /)',
           initial: folder,
           suggestions: store.folderNames,
         ),
@@ -215,6 +217,7 @@ class HomeScreen extends StatelessWidget {
     if (values == null || !context.mounted) return;
     try {
       final deck = await store.createDeck(values[0], values[1]);
+      await store.reveal(deck.folder);
       if (!context.mounted) return;
       // Un paquet vide ne sert à rien : on enchaîne sur l'écriture des cartes.
       _push(context, CardEditorScreen(store: store, deck: deck));
@@ -226,7 +229,7 @@ class HomeScreen extends StatelessWidget {
   Future<void> _deckMenu(BuildContext context, Deck deck) async {
     final choice = await showActionSheet<String>(
       context,
-      title: '${deck.folder} › ${deck.name}',
+      title: '${displayFolder(deck.folder)} › ${deck.name}',
       actions: const [
         SheetAction('review', 'Réviser', Icons.play_arrow),
         SheetAction('cards', 'Voir les cartes', Icons.list),
@@ -244,20 +247,23 @@ class HomeScreen extends StatelessWidget {
       case 'add':
         _push(context, CardEditorScreen(store: store, deck: deck));
       case 'rename':
-        await renameDeck(context, store, deck);
+        final moved = await renameDeck(context, store, deck);
+        if (moved != null) await store.reveal(moved.folder);
       case 'delete':
         await deleteDeck(context, store, deck);
     }
   }
 
-  Future<void> _folderMenu(BuildContext context, FolderStats folder) async {
+  Future<void> _folderMenu(BuildContext context, FolderNode folder) async {
     final choice = await showActionSheet<String>(
       context,
-      title: folder.name,
+      title: displayFolder(folder.path),
       actions: const [
-        SheetAction('review', 'Réviser le dossier', Icons.play_arrow),
+        SheetAction('review', 'Réviser tout le dossier', Icons.play_arrow),
         SheetAction('deck', 'Nouveau paquet ici', Icons.style_outlined),
-        SheetAction('rename', 'Renommer le dossier', Icons.edit_outlined),
+        SheetAction('sub', 'Nouveau sous-dossier', Icons.create_new_folder_outlined),
+        SheetAction('rename', 'Renommer', Icons.edit_outlined),
+        SheetAction('move', 'Déplacer dans…', Icons.drive_file_move_outline),
         SheetAction('delete', 'Supprimer le dossier', Icons.delete_outline,
             danger: true),
       ],
@@ -265,32 +271,89 @@ class HomeScreen extends StatelessWidget {
     if (choice == null || !context.mounted) return;
     switch (choice) {
       case 'review':
-        _review(context, FolderCards(folder.name));
+        if (store.today(folder.counts).total > 0) {
+          _review(context, FolderCards(folder.path));
+        } else {
+          showSnack(context, 'Rien à réviser dans « ${folder.name} » pour l’instant');
+        }
       case 'deck':
-        await _newDeck(context, folder: folder.name);
+        await _newDeck(context, folder: folder.path);
+      case 'sub':
+        await _newSubfolder(context, folder);
       case 'rename':
         final values = await showFieldsDialog(
           context,
           title: 'Renommer le dossier',
           action: 'Enregistrer',
-          fields: [FieldSpec(label: 'Dossier', initial: folder.name)],
+          fields: [FieldSpec(label: 'Nom', initial: folder.name)],
         );
-        if (values == null) return;
-        try {
-          await store.renameFolder(folder.name, values[0]);
-        } catch (error) {
-          if (context.mounted) showSnack(context, errorMessage(error));
-        }
+        if (values == null || !context.mounted) return;
+        await _moveFolder(context, folder.path,
+            joinFolder(folderParent(folder.path), values[0].replaceAll('/', ' ')));
+      case 'move':
+        final parent = folderParent(folder.path);
+        final values = await showFieldsDialog(
+          context,
+          title: 'Déplacer « ${folder.name} » dans…',
+          action: 'Déplacer',
+          fields: [
+            FieldSpec(
+              label: 'Dossier parent (vide = tout en haut)',
+              hint: 'ex. Cours',
+              initial: parent,
+              suggestions: [
+                for (final path in store.folderNames)
+                  if (!isInFolder(path, folder.path) && path != parent) path,
+              ],
+            ),
+          ],
+          validate: (_) => null,
+        );
+        if (values == null || !context.mounted) return;
+        await _moveFolder(context, folder.path,
+            joinFolder(normalizeFolder(values[0]), folder.name));
       case 'delete':
         final sure = await confirmDialog(
           context,
           title: 'Supprimer « ${folder.name} » ?',
-          message: 'Ses ${folder.decks.length} paquet(s), leurs '
-              '${folder.total} carte(s) et tout leur historique de révision '
-              'seront effacés. Impossible de revenir en arrière.',
+          message: 'Tout ce qu’il contient sera effacé : '
+              '${folder.deckCount} paquet(s), ${folder.total} carte(s) et '
+              'leur historique de révision, sous-dossiers compris. '
+              'Impossible de revenir en arrière.',
           action: 'Supprimer',
         );
-        if (sure) await store.deleteFolder(folder.name);
+        if (sure) await store.deleteFolder(folder.path);
+    }
+  }
+
+  Future<void> _moveFolder(BuildContext context, String from, String to) async {
+    try {
+      await store.moveFolder(from, to);
+    } catch (error) {
+      if (context.mounted) showSnack(context, errorMessage(error));
+    }
+  }
+
+  /// Un dossier n'existe qu'avec au moins un paquet : on crée les deux.
+  Future<void> _newSubfolder(BuildContext context, FolderNode parent) async {
+    final values = await showFieldsDialog(
+      context,
+      title: 'Nouveau sous-dossier dans « ${parent.name} »',
+      action: 'Créer',
+      fields: const [
+        FieldSpec(label: 'Sous-dossier', hint: 'ex. Physique'),
+        FieldSpec(label: 'Premier paquet', hint: 'ex. La Terre'),
+      ],
+    );
+    if (values == null || !context.mounted) return;
+    try {
+      final deck = await store.createDeck(
+          joinFolder(parent.path, values[0].replaceAll('/', ' ')), values[1]);
+      await store.reveal(deck.folder);
+      if (!context.mounted) return;
+      _push(context, CardEditorScreen(store: store, deck: deck));
+    } catch (error) {
+      if (context.mounted) showSnack(context, errorMessage(error));
     }
   }
 }
@@ -304,7 +367,7 @@ Future<Deck?> renameDeck(BuildContext context, AppStore store, Deck deck) async 
     action: 'Enregistrer',
     fields: [
       FieldSpec(
-        label: 'Dossier',
+        label: 'Dossier (niveaux séparés par /)',
         initial: deck.folder,
         suggestions: store.folderNames,
       ),
@@ -399,23 +462,27 @@ String _issuesText(String fileName, ImportReport report) {
   return buffer.toString();
 }
 
-/// Une ligne de la liste : un nom à gauche, les trois compteurs à droite.
+
+/// Une ligne de l'arbre : flèche (dossiers), nom, puis les trois compteurs.
+/// Chaque niveau est un peu plus décalé vers la droite.
 class _Row extends StatelessWidget {
   const _Row({
     required this.title,
     required this.counts,
     required this.onTap,
     required this.onLongPress,
-    this.bold = false,
-    this.indent = false,
+    required this.depth,
+    this.folder = false,
+    this.open = false,
   });
 
   final String title;
   final DueCounts counts;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
-  final bool bold;
-  final bool indent;
+  final int depth;
+  final bool folder;
+  final bool open;
 
   @override
   Widget build(BuildContext context) {
@@ -424,17 +491,27 @@ class _Row extends StatelessWidget {
       onTap: onTap,
       onLongPress: onLongPress,
       child: Padding(
-        padding: EdgeInsets.fromLTRB(indent ? 36 : 20, 14, 20, 14),
+        padding: EdgeInsets.fromLTRB(12.0 + depth * 18, 13, 20, 13),
         child: Row(
           children: [
+            SizedBox(
+              width: 28,
+              child: folder
+                  ? Icon(
+                      open ? Icons.expand_more : Icons.chevron_right,
+                      size: 22,
+                      color: scheme.onSurfaceVariant,
+                    )
+                  : null,
+            ),
             Expanded(
               child: Text(
                 title,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: bold ? 17 : 16,
-                  fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+                  fontSize: folder && depth == 0 ? 17 : 16,
+                  fontWeight: folder ? FontWeight.w700 : FontWeight.w400,
                   color: scheme.onSurface,
                 ),
               ),
