@@ -5,6 +5,8 @@ Les changements de chaque version. Format : [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-20
+
 ### Ajouté
 - Ranger en glissant : sur l'accueil, appui long sur un paquet ou un dossier, puis glisse-le sur un dossier pour l'y ranger. Le dossier visé s'encadre ; un dossier replié se déplie si tu restes dessus un instant. Lâcher sur un paquet range dans son dossier. Pendant qu'on glisse un sous-dossier, une zone « tout en haut » apparaît. Message de confirmation avec « Annuler ».
 
