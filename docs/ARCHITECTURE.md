@@ -10,6 +10,7 @@ lib/
 │   ├── deck_screen.dart         les cartes d'un paquet
 │   ├── card_editor_screen.dart  écrire ou corriger une carte
 │   ├── review_screen.dart       la séance de révision
+│   ├── practice_screen.dart     l'entraînement libre
 │   ├── settings_screen.dart     les réglages
 │   ├── stats_screen.dart        les statistiques et leurs graphiques
 │   ├── theme.dart               toutes les couleurs de l'appli
@@ -23,6 +24,7 @@ lib/
     ├── models.dart            Deck, Flashcard, Memory, Grade
     ├── scheduler.dart         l'interface du moteur de répétition
     ├── study_session.dart     quelles cartes, dans quel ordre
+    ├── practice_session.dart  entraînement libre (rien n'est enregistré)
     ├── reminder_plan.dart     quand prévenir, avec quel message
     ├── card_file.dart         lecture des fichiers de cartes
     ├── folder_path.dart       dossiers imbriqués (chemins « Cours/R3.07 »)

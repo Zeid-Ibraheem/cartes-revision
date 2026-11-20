@@ -12,6 +12,7 @@ import '../domain/study_session.dart';
 import 'card_editor_screen.dart';
 import 'common.dart';
 import 'deck_screen.dart';
+import 'practice_screen.dart';
 import 'review_screen.dart';
 import 'settings_screen.dart';
 import 'stats_screen.dart';
@@ -297,6 +298,8 @@ class _HomeScreenState extends State<HomeScreen> {
       title: '${displayFolder(deck.folder)} › ${deck.name}',
       actions: const [
         SheetAction('review', 'Réviser', Icons.play_arrow),
+        SheetAction('practice', 'Entraînement libre (sans changer les dates)',
+            Icons.fitness_center),
         SheetAction('cards', 'Voir les cartes', Icons.list),
         SheetAction('stats', 'Statistiques', Icons.bar_chart),
         SheetAction('add', 'Écrire des cartes', Icons.edit_outlined),
@@ -308,6 +311,8 @@ class _HomeScreenState extends State<HomeScreen> {
     switch (choice) {
       case 'review':
         _review(context, DeckCards(deck));
+      case 'practice':
+        _push(context, PracticeScreen(store: store, scope: DeckCards(deck)));
       case 'cards':
         _push(context, DeckScreen(store: store, deck: deck));
       case 'stats':
@@ -328,6 +333,8 @@ class _HomeScreenState extends State<HomeScreen> {
       title: displayFolder(folder.path),
       actions: const [
         SheetAction('review', 'Réviser tout le dossier', Icons.play_arrow),
+        SheetAction('practice', 'Entraînement libre (sans changer les dates)',
+            Icons.fitness_center),
         SheetAction('stats', 'Statistiques', Icons.bar_chart),
         SheetAction('deck', 'Nouveau paquet ici', Icons.style_outlined),
         SheetAction('sub', 'Nouveau sous-dossier', Icons.create_new_folder_outlined),
@@ -345,6 +352,9 @@ class _HomeScreenState extends State<HomeScreen> {
         } else {
           showSnack(context, 'Rien à réviser dans « ${folder.name} » pour l’instant');
         }
+      case 'practice':
+        _push(context,
+            PracticeScreen(store: store, scope: FolderCards(folder.path)));
       case 'stats':
         _push(context, StatsScreen(store: store, scope: FolderCards(folder.path)));
       case 'deck':

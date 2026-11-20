@@ -419,6 +419,13 @@ class AppStore extends ChangeNotifier {
 
   // ---------------------------------------------------------------- Révision
 
+  /// Toutes les cartes de [scope] (sous-dossiers compris), dues ou non.
+  Future<List<Flashcard>> cardsIn(StudyScope scope) => switch (scope) {
+        AllCards() => _db.cards(),
+        FolderCards(:final folder) => _db.cards(folder: folder),
+        DeckCards(:final deck) => _db.cards(deckId: deck.id),
+      };
+
   /// Prépare une séance avec les réglages actuels.
   Future<StudySession> startSession(StudyScope scope) async {
     await refresh(); // compteur des nouvelles du jour à jour

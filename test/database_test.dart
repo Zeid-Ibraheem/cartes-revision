@@ -346,6 +346,30 @@ void main() {
         isEmpty);
   });
 
+  test('toutes les cartes d’un dossier, dues ou non (entraînement)', () async {
+    final store = await AppStore.open(database: db, clock: () => now);
+    await store.importText(
+        '# dossier: Cours/R3.07\n# paquet: P\na\t1\nb\t2\n'
+        '# dossier: Connaissances\n# paquet: P\nc\t3\n',
+        fallbackDeck: 'f');
+    // Une carte révisée, attendue dans 10 jours : elle est quand même là.
+    final first = (await db.cards()).first;
+    await db.recordReview(
+      before: first,
+      after: Memory(
+          state: LearningState.review,
+          due: now.add(const Duration(days: 10)),
+          lastReview: now,
+          stability: 10,
+          difficulty: 5),
+      grade: Grade.good,
+      at: now,
+    );
+    expect((await store.cardsIn(const FolderCards('Cours'))).map((c) => c.front),
+        ['a', 'b']);
+    expect(await store.cardsIn(const AllCards()), hasLength(3));
+  });
+
   test('le dernier paquet utilisé est retenu', () async {
     final store = await AppStore.open(database: db, clock: () => now);
     final a = await store.createDeck('A', 'P1');

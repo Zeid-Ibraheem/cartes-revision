@@ -8,6 +8,7 @@ import '../domain/study_session.dart';
 import 'card_editor_screen.dart';
 import 'common.dart';
 import 'home_screen.dart';
+import 'practice_screen.dart';
 import 'review_screen.dart';
 import 'stats_screen.dart';
 import 'theme.dart';
@@ -180,6 +181,29 @@ class _DeckScreenState extends State<DeckScreen> {
                     ? 'Rien à réviser pour l’instant'
                     : 'Réviser · ${today.total}'),
               ),
+              if (cards.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                    foregroundColor: scheme.onSurface,
+                    side: BorderSide(color: scheme.outlineVariant),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: () => _open(
+                      PracticeScreen(store: _store, scope: DeckCards(_deck))),
+                  icon: const Icon(Icons.fitness_center, size: 20),
+                  label: const Text('Entraînement libre'),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Toutes les cartes, sans changer leurs dates de révision.',
+                  textAlign: TextAlign.center,
+                  style:
+                      TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                ),
+              ],
             ],
           ),
         ),
