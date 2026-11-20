@@ -5,6 +5,8 @@ Les changements de chaque version. Format : [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-20
+
 ### Ajouté
 - Entraînement libre : revoir toutes les cartes d'un paquet ou d'un dossier quand tu veux (avant un contrôle, par exemple), sans rien changer à leurs dates de révision ni aux statistiques. Deux boutons : « À revoir » (la carte revient 3 cartes plus loin) et « Su » (elle sort). Barre de progression, bilan à la fin, et « Revoir les cartes ratées ».
 - Accès : appui long sur un paquet ou un dossier › Entraînement libre, ou bouton « Entraînement libre » dans l'écran d'un paquet.
