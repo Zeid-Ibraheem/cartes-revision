@@ -5,6 +5,15 @@ Les changements de chaque version. Format : [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+### Ajouté
+- Ranger en glissant : sur l'accueil, appui long sur un paquet ou un dossier, puis glisse-le sur un dossier pour l'y ranger. Le dossier visé s'encadre ; un dossier replié se déplie si tu restes dessus un instant. Lâcher sur un paquet range dans son dossier. Pendant qu'on glisse un sous-dossier, une zone « tout en haut » apparaît. Message de confirmation avec « Annuler ».
+
+### Changé
+- Le menu des actions d'un paquet ou d'un dossier s'ouvre maintenant quand on relâche l'appui long sans bouger.
+
+### Corrigé
+- tools/release.sh : le numéro de version part du plus haut entre la dernière étiquette et pubspec.yaml (une copie du dépôt sans étiquettes ne republie plus une ancienne version).
+
 ## [0.7.0] - 2026-11-20
 
 ### Ajouté

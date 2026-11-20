@@ -23,6 +23,23 @@ void main() {
     expect(displayFolder('Cours/R3.07'), 'Cours › R3.07');
   });
 
+  test('où peut-on glisser un dossier ou un paquet', () {
+    // Dossier
+    expect(canMoveFolderInto('Cours/R3.07', 'Connaissances'), isTrue);
+    expect(canMoveFolderInto('Cours/R3.07', ''), isTrue, reason: 'tout en haut');
+    expect(canMoveFolderInto('R3.07', ''), isFalse, reason: 'déjà en haut');
+    expect(canMoveFolderInto('Cours/R3.07', 'Cours'), isFalse, reason: 'déjà là');
+    expect(canMoveFolderInto('Cours', 'Cours'), isFalse, reason: 'lui-même');
+    expect(canMoveFolderInto('Cours', 'Cours/R3.07'), isFalse,
+        reason: 'un de ses sous-dossiers');
+    expect(canMoveFolderInto('Cours', 'Coursier'), isTrue);
+    // Paquet
+    expect(canMoveDeckInto('Cours/R3.07', 'Connaissances'), isTrue);
+    expect(canMoveDeckInto('Cours/R3.07', 'Cours/R3.07'), isFalse);
+    expect(canMoveDeckInto('Cours/R3.07', ''), isFalse,
+        reason: 'un paquet est toujours dans un dossier');
+  });
+
   test('appartenance à un dossier', () {
     expect(isInFolder('Cours', 'Cours'), isTrue);
     expect(isInFolder('Cours/R3.07', 'Cours'), isTrue);

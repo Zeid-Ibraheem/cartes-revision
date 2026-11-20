@@ -47,6 +47,17 @@ String joinFolder(String parent, String leaf) =>
 bool isInFolder(String path, String folder) =>
     path == folder || path.startsWith('$folder$folderSeparator');
 
+/// Le dossier [folder] peut-il être rangé dans [target] (vide = tout en
+/// haut) ? Pas dans lui-même, ni dans un de ses sous-dossiers, ni là où il
+/// est déjà.
+bool canMoveFolderInto(String folder, String target) =>
+    !isInFolder(target, folder) && target != folderParent(folder);
+
+/// Un paquet rangé dans [current] peut-il aller dans [target] ? Un paquet est
+/// toujours dans un dossier, et ce doit être un autre que le sien.
+bool canMoveDeckInto(String current, String target) =>
+    target.isNotEmpty && target != current;
+
 /// Tous les dossiers d'un chemin, du haut vers le bas :
 /// « Cours/S3/R3.07 » donne Cours, Cours/S3, Cours/S3/R3.07.
 List<String> folderAncestry(String path) {

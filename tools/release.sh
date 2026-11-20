@@ -19,12 +19,12 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   exit 1
 fi
 
-# Dernière version : la plus haute étiquette, sinon celle de pubspec.yaml.
-last="$(git tag --list 'v*' --sort=-v:refname | head -n1)"
-if [ -z "$last" ]; then
-  last="v$(sed -n -E 's/^version: *([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' "$PUBSPEC")"
-  [ "$last" != "v" ] || last="v0.0.0"
-fi
+# Dernière version : la plus haute entre l'étiquette la plus récente et
+# pubspec.yaml (une copie sans les étiquettes ne recrée pas une version).
+tag="$(git tag --list 'v*' --sort=-v:refname | sed -n 1p)"
+pub="v$(sed -n -E 's/^version: *([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' "$PUBSPEC")"
+[ "$pub" != "v" ] || pub="v0.0.0"
+last="$(printf '%s\n' "${tag:-v0.0.0}" "$pub" | sort -V | tail -n1)"
 IFS=. read -r major minor patch <<< "${last#v}"
 patch="${patch%%[^0-9]*}"
 

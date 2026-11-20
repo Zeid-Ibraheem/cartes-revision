@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -36,6 +38,9 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   bool _dialOpen = false;
+
+  /// Ce qui est en train d'être glissé, ou `null`.
+  _DragItem? _dragging;
 
   AppStore get store => widget.store;
 
@@ -147,6 +152,7 @@ class _HomeScreenState extends State<HomeScreen> {
     void addFolder(FolderNode folder) {
       final open = store.isExpanded(folder.path);
       rows.add(_Row(
+        key: ValueKey('dossier:${folder.path}'),
         title: folder.name,
         depth: folder.depth,
         folder: true,
@@ -154,37 +160,102 @@ class _HomeScreenState extends State<HomeScreen> {
         counts: store.today(folder.counts),
         onToggle: () => store.toggleExpanded(folder.path),
         onTap: () => _openFolder(context, folder),
-        onLongPress: () => _folderMenu(context, folder),
+        onMenu: () => _folderMenu(context, folder),
+        drag: _FolderDrag(folder.path),
+        dropFolder: folder.path,
+        onDragChanged: _setDragging,
+        onDrop: (item) => _drop(context, item, folder.path),
+        onHover: open ? null : () => store.toggleExpanded(folder.path),
       ));
       if (!open) return;
       folder.folders.forEach(addFolder);
       for (final stats in folder.decks) {
         rows.add(_Row(
+          key: ValueKey('paquet:${stats.deck.id}'),
           title: stats.deck.name,
           depth: folder.depth + 1,
           counts: store.today(stats.counts),
           onTap: () => _openDeck(context, stats),
-          onLongPress: () => _deckMenu(context, stats.deck),
+          onMenu: () => _deckMenu(context, stats.deck),
+          drag: _DeckDrag(stats.deck),
+          // Lâcher sur un paquet = ranger dans son dossier.
+          dropFolder: folder.path,
+          onDragChanged: _setDragging,
+          onDrop: (item) => _drop(context, item, folder.path),
         ));
       }
     }
 
     store.folders.forEach(addFolder);
-    return ListView(
+    final dragging = _dragging;
+    // Une colonne (pas une liste paresseuse) : chaque ligne garde son état
+    // pendant un glisser, même si un dossier se déplie entre-temps.
+    return SingleChildScrollView(
       padding: const EdgeInsets.only(top: 4, bottom: 96),
-      children: [
-        ...rows,
-        if (store.newLeftToday == 0 && store.counts.fresh > 0)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-            child: Text(
-              'Limite de nouvelles cartes atteinte pour aujourd’hui '
-              '(${store.settings.newPerDay}, modifiable dans les réglages).',
-              style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (dragging is _FolderDrag && folderDepth(dragging.path) > 0)
+            _RootDropZone(onDrop: (item) => _drop(context, item, '')),
+          ...rows,
+          if (store.newLeftToday == 0 && store.counts.fresh > 0)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+              child: Text(
+                'Limite de nouvelles cartes atteinte pour aujourd’hui '
+                '(${store.settings.newPerDay}, modifiable dans les réglages).',
+                style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+              ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
+  }
+
+  void _setDragging(_DragItem? item) => setState(() => _dragging = item);
+
+  /// Range [item] dans [target] (chemin d'un dossier, vide = tout en haut),
+  /// avec « Annuler » dans le message de confirmation.
+  Future<void> _drop(BuildContext context, _DragItem item, String target) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final String name;
+      final Future<void> Function() undo;
+      switch (item) {
+        case _DeckDrag(:final deck):
+          final moved = await store.updateDeck(deck, target, deck.name);
+          name = deck.name;
+          undo = () => store.updateDeck(moved, deck.folder, deck.name);
+        case _FolderDrag(:final path):
+          final moved =
+              await store.moveFolder(path, joinFolder(target, folderLeaf(path)));
+          name = folderLeaf(path);
+          undo = () => store.moveFolder(moved, path);
+      }
+      if (target.isNotEmpty) await store.reveal(target);
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(
+          content: Text(target.isEmpty
+              ? '« $name » rangé tout en haut'
+              : '« $name » rangé dans ${displayFolder(target)}'),
+          action: SnackBarAction(
+            label: 'Annuler',
+            onPressed: () async {
+              try {
+                await undo();
+              } catch (error) {
+                messenger.showSnackBar(
+                    SnackBar(content: Text(errorMessage(error))));
+              }
+            },
+          ),
+        ));
+    } catch (error) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(errorMessage(error))));
+    }
   }
 
   Widget _empty(BuildContext context) {
@@ -546,16 +617,51 @@ String _issuesText(String fileName, ImportReport report) {
 }
 
 
+/// Ce qu'on fait glisser sur l'accueil : un paquet ou un dossier.
+sealed class _DragItem {
+  const _DragItem();
+
+  /// Peut-il être rangé dans le dossier [target] ?
+  bool fits(String target);
+}
+
+class _DeckDrag extends _DragItem {
+  const _DeckDrag(this.deck);
+
+  final Deck deck;
+
+  @override
+  bool fits(String target) => canMoveDeckInto(deck.folder, target);
+}
+
+class _FolderDrag extends _DragItem {
+  const _FolderDrag(this.path);
+
+  final String path;
+
+  @override
+  bool fits(String target) => canMoveFolderInto(path, target);
+}
+
 /// Une ligne de l'arbre, comme AnkiDroid : flèche (dossiers), nom en gras,
 /// puis les trois compteurs. Chaque niveau est décalé vers la droite.
-class _Row extends StatelessWidget {
+///
+/// Appui long : la ligne se soulève et se glisse sur un dossier pour l'y
+/// ranger. Appui long relâché sans bouger : le menu des actions.
+class _Row extends StatefulWidget {
   const _Row({
+    super.key,
     required this.title,
     required this.counts,
     required this.onTap,
-    required this.onLongPress,
+    required this.onMenu,
     required this.depth,
+    required this.drag,
+    required this.dropFolder,
+    required this.onDragChanged,
+    required this.onDrop,
     this.onToggle,
+    this.onHover,
     this.folder = false,
     this.open = false,
   });
@@ -563,55 +669,200 @@ class _Row extends StatelessWidget {
   final String title;
   final DueCounts counts;
   final VoidCallback onTap;
-  final VoidCallback onLongPress;
+  final VoidCallback onMenu;
   final VoidCallback? onToggle;
   final int depth;
   final bool folder;
   final bool open;
 
+  /// Ce que cette ligne transporte quand on la fait glisser.
+  final _DragItem drag;
+
+  /// Dossier où va ce qu'on lâche sur cette ligne.
+  final String dropFolder;
+
+  /// Début (élément glissé) et fin (`null`) d'un glisser.
+  final ValueChanged<_DragItem?> onDragChanged;
+  final ValueChanged<_DragItem> onDrop;
+
+  /// Survol prolongé pendant un glisser (déplier un dossier replié).
+  final VoidCallback? onHover;
+
+  @override
+  State<_Row> createState() => _RowState();
+}
+
+class _RowState extends State<_Row> {
+  /// Distance parcourue pendant le glisser : en dessous, c'est un simple
+  /// appui long (menu).
+  double _moved = 0;
+  Timer? _hoverTimer;
+
+  @override
+  void dispose() {
+    _hoverTimer?.cancel();
+    super.dispose();
+  }
+
+  Widget _content(BuildContext context, {bool highlighted = false}) {
+    final scheme = Theme.of(context).colorScheme;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
+      decoration: BoxDecoration(
+        color: highlighted ? scheme.surfaceContainerHighest : null,
+        border: highlighted
+            ? Border.all(color: scheme.onSurfaceVariant, width: 1.5)
+            : null,
+        borderRadius: BorderRadius.circular(highlighted ? 12 : 0),
+      ),
+      child: InkWell(
+        onTap: widget.onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 62),
+          child: Padding(
+            padding: EdgeInsets.only(left: 6.0 + widget.depth * 24, right: 16),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 44,
+                  height: 62,
+                  child: widget.folder
+                      ? InkResponse(
+                          onTap: widget.onToggle,
+                          radius: 22,
+                          child: Icon(
+                            widget.open
+                                ? Icons.expand_more
+                                : Icons.chevron_right,
+                            size: 26,
+                            color: scheme.onSurface,
+                          ),
+                        )
+                      : null,
+                ),
+                Expanded(
+                  child: Text(
+                    widget.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: scheme.onSurface,
+                    ),
+                  ),
+                ),
+                CountsRow(widget.counts, fontSize: 18, columnWidth: 34),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _feedback(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surfaceContainerHighest,
+      elevation: 8,
+      borderRadius: BorderRadius.circular(14),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(widget.folder ? Icons.folder_outlined : Icons.style_outlined,
+                color: scheme.onSurface),
+            const SizedBox(width: 12),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 220),
+              child: Text(
+                widget.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: scheme.onSurface,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DragTarget<_DragItem>(
+      onWillAcceptWithDetails: (details) {
+        final ok = details.data.fits(widget.dropFolder);
+        final hover = widget.onHover;
+        if (ok && hover != null) {
+          _hoverTimer?.cancel();
+          _hoverTimer = Timer(const Duration(milliseconds: 700), hover);
+        }
+        return ok;
+      },
+      onLeave: (_) => _hoverTimer?.cancel(),
+      onAcceptWithDetails: (details) {
+        _hoverTimer?.cancel();
+        widget.onDrop(details.data);
+      },
+      builder: (context, candidates, _) {
+        final row = _content(context, highlighted: candidates.isNotEmpty);
+        return LongPressDraggable<_DragItem>(
+          data: widget.drag,
+          dragAnchorStrategy: pointerDragAnchorStrategy,
+          feedback: _feedback(context),
+          childWhenDragging: Opacity(opacity: 0.35, child: row),
+          onDragStarted: () {
+            _moved = 0;
+            widget.onDragChanged(widget.drag);
+          },
+          onDragUpdate: (details) => _moved += details.delta.distance,
+          onDragEnd: (details) {
+            widget.onDragChanged(null);
+            if (!details.wasAccepted && _moved < 12) widget.onMenu();
+          },
+          child: row,
+        );
+      },
+    );
+  }
+}
+
+/// Zone « tout en haut », visible seulement pendant qu'on fait glisser un
+/// sous-dossier : le lâcher ici le sort de tous les dossiers.
+class _RootDropZone extends StatelessWidget {
+  const _RootDropZone({required this.onDrop});
+
+  final ValueChanged<_DragItem> onDrop;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 62),
-        child: Padding(
-          padding: EdgeInsets.only(left: 6.0 + depth * 24, right: 16),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 44,
-                height: 62,
-                child: folder
-                    ? InkResponse(
-                        onTap: onToggle,
-                        radius: 22,
-                        child: Icon(
-                          open ? Icons.expand_more : Icons.chevron_right,
-                          size: 26,
-                          color: scheme.onSurface,
-                        ),
-                      )
-                    : null,
-              ),
-              Expanded(
-                child: Text(
-                  title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    color: scheme.onSurface,
-                  ),
-                ),
-              ),
-              CountsRow(counts, fontSize: 18, columnWidth: 34),
-            ],
+    return DragTarget<_DragItem>(
+      onWillAcceptWithDetails: (details) => details.data.fits(''),
+      onAcceptWithDetails: (details) => onDrop(details.data),
+      builder: (context, candidates, _) => Container(
+        margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+        height: 56,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: candidates.isNotEmpty ? scheme.surfaceContainerHighest : null,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: candidates.isNotEmpty
+                ? scheme.onSurfaceVariant
+                : scheme.outlineVariant,
+            width: 1.5,
           ),
         ),
+        child: Text('Lâcher ici pour ranger tout en haut',
+            style: TextStyle(color: scheme.onSurfaceVariant)),
       ),
     );
   }
