@@ -5,6 +5,7 @@ import 'data/notification_reminders.dart';
 import 'data/store.dart';
 import 'domain/settings.dart';
 import 'ui/home_screen.dart';
+import 'ui/review_screen.dart';
 import 'ui/theme.dart';
 
 Future<void> main() async {
@@ -25,15 +26,45 @@ Future<void> main() async {
           ),
         ),
       );
-  final store = await AppStore.open(reminders: NotificationReminders());
-  runApp(CartesApp(store: store));
+  final reminders = NotificationReminders();
+  final store = await AppStore.open(reminders: reminders);
+  final navigator = GlobalKey<NavigatorState>();
+
+  // Un appui sur le rappel ouvre directement la séance « Tout réviser »
+  // (en revenant d'abord à l'accueil si un autre écran était ouvert).
+  void openReview() => navigator.currentState
+    ?..popUntil((route) => route.isFirst)
+    ..push(MaterialPageRoute<void>(
+      builder: (_) => ReviewScreen(store: store, scope: const AllCards()),
+    ));
+
+  var launchedByReminder = false;
+  try {
+    launchedByReminder = await reminders.start(onOpen: openReview);
+  } catch (_) {
+    // Pas de notifications sur cet appareil : l'appli marche sans.
+  }
+  runApp(CartesApp(
+    store: store,
+    navigatorKey: navigator,
+    onStart: launchedByReminder ? openReview : null,
+  ));
   await store.askReminderPermissionOnce();
 }
 
 class CartesApp extends StatefulWidget {
-  const CartesApp({super.key, required this.store});
+  const CartesApp({
+    super.key,
+    required this.store,
+    required this.navigatorKey,
+    this.onStart,
+  });
 
   final AppStore store;
+  final GlobalKey<NavigatorState> navigatorKey;
+
+  /// Lancé une fois, juste après le premier affichage.
+  final void Function()? onStart;
 
   @override
   State<CartesApp> createState() => _CartesAppState();
@@ -44,6 +75,10 @@ class _CartesAppState extends State<CartesApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    final onStart = widget.onStart;
+    if (onStart != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => onStart());
+    }
   }
 
   @override
@@ -66,6 +101,7 @@ class _CartesAppState extends State<CartesApp> with WidgetsBindingObserver {
         final theme = widget.store.settings.theme;
         return MaterialApp(
           title: appName,
+          navigatorKey: widget.navigatorKey,
           debugShowCheckedModeBanner: false,
           themeMode: switch (theme) {
             AppTheme.system => ThemeMode.system,

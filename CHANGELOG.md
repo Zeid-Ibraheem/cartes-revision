@@ -5,6 +5,25 @@ Les changements de chaque version. Format : [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+### Ajouté
+- Annuler la dernière réponse pendant une séance (↶ en haut) : la carte revient telle qu'avant, et la réponse disparaît des statistiques. Plusieurs annulations d'affilée possibles.
+- Bilan en fin de séance : cartes, temps et pourcentage de réussite.
+- « Tout réviser · N » en bas de l'accueil : une seule séance avec les cartes dues de tous les dossiers.
+- Un appui sur la notification ouvre directement la séance « Tout réviser », même appli fermée.
+- Écrire des cartes : case « Créer aussi la carte inverse » (la réponse devient la question).
+- Écrire des cartes : l'appli propose le dernier paquet utilisé.
+
+### Changé
+- Boutons gris foncé au lieu de blancs, messages du bas de l'écran sombres : le noir sur noir n'est plus coupé par des pavés blancs. Les boutons de suppression sont en rouge.
+- Zéros des compteurs et textes d'aide dans un gris lisible (contraste 3:1 au lieu de 1,5:1).
+- La phrase « Réponds dans ta tête, puis touche l'écran » disparaît des cartes.
+- « Ajouter » devient « Ajouter des cartes » dans le menu du bouton +.
+
+### Corrigé
+- Un double appui pendant la révision pouvait noter la carte suivante sans l'avoir vue (ou noter « Difficile » en voulant voir la réponse) : les appuis sont ignorés 0,3 s après chaque changement.
+- Le temps d'une réponse est plafonné à 60 s : un téléphone posé sur une carte ne fausse plus les statistiques.
+- Quitter l'écran d'écriture avec du texte tapé demande maintenant confirmation au lieu de tout effacer.
+
 ## [0.5.0] - 2026-11-18
 
 ## [0.4.0] - 2026-11-18

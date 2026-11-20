@@ -23,6 +23,9 @@ class FakeReminders implements ReminderService {
   @override
   Future<void> replaceAll(List<PlannedReminder> reminders) async =>
       calls.add(reminders);
+
+  @override
+  Future<bool> start({required void Function() onOpen}) async => false;
 }
 
 void main() {
@@ -317,6 +320,44 @@ void main() {
     final report = await store.stats(const FolderCards('Cours'), periodDays: 7);
     expect(report.period.answers, 1);
     expect(report.collection.total, 1);
+  });
+
+  test('annuler une réponse : carte et historique comme avant', () async {
+    final store = await AppStore.open(database: db, clock: () => now);
+    await store.updateSettings(const AppSettings(newPerDay: 1, shuffle: false));
+    await store.importText('# paquet: P\na\t1\nb\t2\n', fallbackDeck: 'f');
+    expect(store.newLeftToday, 1);
+
+    final session = await store.startSession(const AllCards());
+    final before = session.current!;
+    final after = session.answer(Grade.easy);
+    final reviewId =
+        await store.recordAnswer(before: before, after: after, grade: Grade.easy);
+    expect(store.newLeftToday, 0);
+    expect(store.todayTotals.answers, 1);
+
+    await store.undoAnswer(before: before, reviewId: reviewId);
+    final card = (await db.cards()).firstWhere((c) => c.id == before.id);
+    expect(card.memory.isNew, isTrue);
+    expect(card.memory.due, before.memory.due);
+    expect(store.newLeftToday, 1, reason: 'la nouvelle du jour est rendue');
+    expect(store.todayTotals.answers, 0);
+    expect(await db.reviews(since: now.subtract(const Duration(days: 1))),
+        isEmpty);
+  });
+
+  test('le dernier paquet utilisé est retenu', () async {
+    final store = await AppStore.open(database: db, clock: () => now);
+    final a = await store.createDeck('A', 'P1');
+    final b = await store.createDeck('B', 'P2');
+    expect(store.lastDeck, isNull);
+    await store.rememberDeck(b);
+    expect(store.lastDeck?.id, b.id);
+    final reopened = await AppStore.open(database: db, clock: () => now);
+    expect(reopened.lastDeck?.name, 'P2');
+    await reopened.deleteDeck(b);
+    expect(reopened.lastDeck, isNull, reason: 'paquet supprimé');
+    expect(a.name, 'P1');
   });
 
   test('réglages enregistrés et relus', () async {

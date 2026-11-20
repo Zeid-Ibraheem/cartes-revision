@@ -360,17 +360,18 @@ class AppDatabase {
       _db.delete('cards', where: 'id = ?', whereArgs: [id]);
 
   /// Enregistre une réponse : nouvel état de la carte + une ligne d'historique.
-  Future<void> recordReview({
+  /// Renvoie le numéro de la ligne d'historique (pour pouvoir l'annuler).
+  Future<int> recordReview({
     required Flashcard before,
     required Memory after,
     required Grade grade,
     required DateTime at,
     int? durationMs,
   }) async {
-    await _db.transaction((txn) async {
+    return _db.transaction((txn) async {
       await txn.update('cards', _memoryColumns(after),
           where: 'id = ?', whereArgs: [before.id]);
-      await txn.insert('reviews', {
+      return txn.insert('reviews', {
         'card_id': before.id,
         'reviewed_at': _ms(at),
         'grade': grade.name,
@@ -380,6 +381,15 @@ class AppDatabase {
       });
     });
   }
+
+  /// Annule une réponse : la carte retrouve son état d'avant ([before]) et
+  /// la ligne d'historique [reviewId] est effacée.
+  Future<void> undoReview({required Flashcard before, required int reviewId}) =>
+      _db.transaction((txn) async {
+        await txn.update('cards', _memoryColumns(before.memory),
+            where: 'id = ?', whereArgs: [before.id]);
+        await txn.delete('reviews', where: 'id = ?', whereArgs: [reviewId]);
+      });
 
   /// Échéance de chaque carte déjà révisée (pour prévoir les rappels).
   Future<List<DateTime>> dueTimes() async {

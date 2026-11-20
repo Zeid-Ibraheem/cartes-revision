@@ -17,18 +17,32 @@ class NotificationReminders implements ReminderService {
 
   final _plugin = FlutterLocalNotificationsPlugin();
   bool _ready = false;
+  void Function()? _onOpen;
+
+  static const _settings = InitializationSettings(
+    android: AndroidInitializationSettings('ic_notification'),
+  );
 
   Future<AndroidFlutterLocalNotificationsPlugin?> _android() async {
     if (!_ready) {
       await _plugin.initialize(
-        settings: const InitializationSettings(
-          android: AndroidInitializationSettings('ic_notification'),
-        ),
+        settings: _settings,
+        // Appui sur un rappel pendant que l'appli tourne (même en arrière-plan).
+        onDidReceiveNotificationResponse: (_) => _onOpen?.call(),
       );
       _ready = true;
     }
     return _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
+  }
+
+  @override
+  Future<bool> start({required void Function() onOpen}) async {
+    _onOpen = onOpen;
+    await _android();
+    // Appli fermée, puis lancée par un appui sur le rappel.
+    final launch = await _plugin.getNotificationAppLaunchDetails();
+    return launch?.didNotificationLaunchApp ?? false;
   }
 
   @override

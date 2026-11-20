@@ -125,6 +125,7 @@ class AppStore extends ChangeNotifier {
   AppSettings _settings;
   List<FolderNode> _folders = const [];
   Set<String> _expanded = {};
+  int? _lastDeckId;
   int _newSeenToday = 0;
   StudyTotals _todayTotals = const StudyTotals();
 
@@ -136,7 +137,9 @@ class AppStore extends ChangeNotifier {
     final db = database ?? await AppDatabase.open();
     final settings = AppSettings.fromMap(await db.settings());
     final store = AppStore._(db, settings, clock ?? DateTime.now, reminders);
-    final expanded = (await db.settings())[_kExpanded] ?? '';
+    final stored = await db.settings();
+    store._lastDeckId = int.tryParse(stored[_kLastDeck] ?? '');
+    final expanded = stored[_kExpanded] ?? '';
     store._expanded = expanded.split('\n').where((p) => p.isNotEmpty).toSet();
     await store.refresh();
     return store;
@@ -145,6 +148,7 @@ class AppStore extends ChangeNotifier {
   // Clés enregistrées dans la table des réglages, hors des réglages visibles.
   static const _kPermissionAsked = 'notifications_autorisation_demandee';
   static const _kExpanded = 'dossiers_ouverts';
+  static const _kLastDeck = 'dernier_paquet';
 
   /// Au premier démarrage, demande l'autorisation des notifications si le
   /// rappel est actif. Une seule fois : ensuite, on ne la redemande que si
@@ -433,14 +437,15 @@ class AppStore extends ChangeNotifier {
     );
   }
 
-  /// Enregistre une réponse donnée pendant une séance.
-  Future<void> recordAnswer({
+  /// Enregistre une réponse donnée pendant une séance. Renvoie le numéro de
+  /// la réponse, pour [undoAnswer].
+  Future<int> recordAnswer({
     required Flashcard before,
     required Flashcard after,
     required Grade grade,
     int? durationMs,
   }) async {
-    await _db.recordReview(
+    final id = await _db.recordReview(
       before: before,
       after: after.memory,
       grade: grade,
@@ -448,5 +453,28 @@ class AppStore extends ChangeNotifier {
       durationMs: durationMs,
     );
     await refresh();
+    return id;
+  }
+
+  /// Annule une réponse : la carte retrouve son état [before] et la réponse
+  /// [reviewId] disparaît de l'historique et des statistiques.
+  Future<void> undoAnswer({required Flashcard before, required int reviewId}) async {
+    await _db.undoReview(before: before, reviewId: reviewId);
+    await refresh();
+  }
+
+  /// Paquet utilisé pour la dernière carte écrite à la main, s'il existe
+  /// encore.
+  Deck? get lastDeck {
+    for (final deck in decks) {
+      if (deck.id == _lastDeckId) return deck;
+    }
+    return null;
+  }
+
+  Future<void> rememberDeck(Deck deck) async {
+    if (_lastDeckId == deck.id) return;
+    _lastDeckId = deck.id;
+    await _db.saveSettings({_kLastDeck: '${deck.id}'});
   }
 }

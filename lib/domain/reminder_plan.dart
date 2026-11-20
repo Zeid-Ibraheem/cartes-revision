@@ -43,6 +43,11 @@ abstract interface class ReminderService {
 
   /// Remplace tous les rappels programmés par [reminders] (vide = aucun).
   Future<void> replaceAll(List<PlannedReminder> reminders);
+
+  /// À appeler au démarrage. [onOpen] est appelé chaque fois que
+  /// l'utilisateur touche un rappel pendant que l'appli tourne. Renvoie
+  /// `true` si c'est un rappel qui vient de lancer l'appli.
+  Future<bool> start({required void Function() onOpen});
 }
 
 /// Les rappels des [reminderDaysAhead] prochains jours.

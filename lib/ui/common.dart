@@ -20,11 +20,14 @@ String errorMessage(Object error) {
 }
 
 /// Demande une confirmation. Renvoie `true` si l'utilisateur accepte.
+///
+/// [danger] : action destructrice (suppression), son bouton est en rouge.
 Future<bool> confirmDialog(
   BuildContext context, {
   required String title,
   required String message,
   required String action,
+  bool danger = false,
 }) async {
   final confirmed = await showDialog<bool>(
     context: context,
@@ -37,6 +40,10 @@ Future<bool> confirmDialog(
           child: const Text('Annuler'),
         ),
         FilledButton(
+          style: danger
+              ? FilledButton.styleFrom(
+                  foregroundColor: Theme.of(dialogContext).colorScheme.error)
+              : null,
           onPressed: () => Navigator.pop(dialogContext, true),
           child: Text(action),
         ),
@@ -186,7 +193,7 @@ class CountsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final signal = Signal.of(context);
-    final muted = Theme.of(context).colorScheme.outlineVariant;
+    final muted = signal.faint;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [

@@ -95,7 +95,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   () => _newFolder(context)),
               _DialAction('Créer un paquet', Icons.style_outlined,
                   () => _newDeck(context)),
-              _DialAction('Ajouter', Icons.add_box_outlined,
+              _DialAction('Ajouter des cartes', Icons.add_box_outlined,
                   () => _push(context, CardEditorScreen(store: store))),
             ],
             onAction: _closeDial,
@@ -103,15 +103,38 @@ class _HomeScreenState extends State<HomeScreen> {
           bottomNavigationBar: SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
-              child: Text(
-                todayLine(store.todayTotals),
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 15, color: scheme.onSurfaceVariant),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (!store.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _reviewAllButton(context),
+                    ),
+                  Text(
+                    todayLine(store.todayTotals),
+                    textAlign: TextAlign.center,
+                    style:
+                        TextStyle(fontSize: 15, color: scheme.onSurfaceVariant),
+                  ),
+                ],
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+
+  /// « Tout réviser · 14 » : une seule séance avec les cartes dues de tous
+  /// les dossiers. Grisé quand il n'y a rien à faire.
+  Widget _reviewAllButton(BuildContext context) {
+    final total = store.today(store.counts).total;
+    return FilledButton(
+      style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+      onPressed: total == 0 ? null : () => _review(context, const AllCards()),
+      child: Text(total == 0 ? 'Rien à réviser' : 'Tout réviser · $total'),
     );
   }
 
@@ -369,6 +392,7 @@ class _HomeScreenState extends State<HomeScreen> {
               'leur historique de révision, sous-dossiers compris. '
               'Impossible de revenir en arrière.',
           action: 'Supprimer',
+          danger: true,
         );
         if (sure) await store.deleteFolder(folder.path);
     }
@@ -439,6 +463,7 @@ Future<bool> deleteDeck(BuildContext context, AppStore store, Deck deck) async {
     message: 'Ses cartes et leur historique de révision seront effacés. '
         'Impossible de revenir en arrière.',
     action: 'Supprimer',
+    danger: true,
   );
   if (!sure) return false;
   await store.deleteDeck(deck);

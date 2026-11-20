@@ -248,6 +248,21 @@ class StudySession {
     if (_current?.id == card.id) _current = card;
   }
 
+  /// Annule la dernière réponse : [before] (la carte telle qu'elle était
+  /// avant cette réponse) redevient la carte en cours. La carte qui était
+  /// affichée repasse en tête de file.
+  void undo(Flashcard before) {
+    _queue.removeWhere((card) => card.id == before.id);
+    _waiting.removeWhere((card) => card.id == before.id);
+    final current = _current;
+    if (current != null && current.id != before.id) _queue.insert(0, current);
+    final now = _clock();
+    _current = before;
+    _shownAt = now.toUtc();
+    _outcomes = _scheduler.outcomes(before.memory, now);
+    if (_answered > 0) _answered--;
+  }
+
   /// Retire la carte en cours de la séance (elle vient d'être supprimée) et
   /// passe à la suivante.
   void dropCurrent() {

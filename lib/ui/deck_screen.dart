@@ -77,6 +77,7 @@ class _DeckScreenState extends State<DeckScreen> {
       title: 'Supprimer la carte ?',
       message: 'La carte et son historique de révision seront effacés.',
       action: 'Supprimer',
+      danger: true,
     );
     if (!sure) return;
     await _store.deleteCard(card);
@@ -267,7 +268,7 @@ class _BigCount extends StatelessWidget {
             style: TextStyle(
               fontSize: 26,
               fontWeight: FontWeight.w700,
-              color: value == 0 ? scheme.outlineVariant : color,
+              color: value == 0 ? Signal.of(context).faint : color,
             ),
           ),
           const SizedBox(height: 2),

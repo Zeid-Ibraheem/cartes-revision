@@ -158,6 +158,36 @@ void main() {
     expect(s.counts.learning, 1);
   });
 
+  test('annuler la dernière réponse remet la carte, telle qu’avant', () {
+    final s = session([fresh(1), fresh(2)]);
+    final before = s.current!;
+    s.answer(Grade.again); // carte 1 en apprentissage, carte 2 affichée
+    expect(s.current!.id, 2);
+    expect(s.answered, 1);
+
+    s.undo(before);
+    expect(s.current!.id, 1);
+    expect(s.current!.memory.isNew, isTrue, reason: 'état d’avant la réponse');
+    expect(s.answered, 0);
+    expect(s.remaining, 2, reason: 'la carte 1 n’est pas en double');
+    expect(s.counts.fresh, 2);
+    expect(s.counts.learning, 0);
+
+    // La carte 2 repasse juste après.
+    s.answer(Grade.good);
+    expect(s.current!.id, 2);
+  });
+
+  test('annuler après la fin de la séance la rouvre', () {
+    final s = session([fresh(1)]);
+    final before = s.current!;
+    s.answer(Grade.good);
+    expect(s.isFinished, isTrue);
+    s.undo(before);
+    expect(s.isFinished, isFalse);
+    expect(s.current!.id, 1);
+  });
+
   test('supprimer la carte en cours passe à la suivante', () {
     final s = session([fresh(1), fresh(2)]);
     s.dropCurrent();

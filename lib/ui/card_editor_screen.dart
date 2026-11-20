@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../data/database.dart';
 import '../data/store.dart';
 import '../domain/folder_path.dart';
 import '../domain/models.dart';
@@ -49,15 +50,21 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
   String? _error;
   bool _busy = false;
 
+  /// Ajouter aussi la carte dans l'autre sens (réponse → question).
+  bool _inverse = false;
+
   AppStore get _store => widget.store;
   bool get _editing => widget.card != null;
 
   @override
   void initState() {
     super.initState();
-    // Un seul paquet existe : inutile de le faire choisir.
+    // Paquet proposé : celui de la dernière carte écrite, ou le seul qui
+    // existe. Inutile de le rechoisir à chaque fois.
     final decks = _store.decks;
-    if (_deck == null && !_editing && decks.length == 1) _deck = decks.single;
+    if (_deck == null && !_editing) {
+      _deck = _store.lastDeck ?? (decks.length == 1 ? decks.single : null);
+    }
   }
 
   @override
@@ -132,9 +139,22 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
         return;
       }
       await _store.addCard(deck!, _front.text, _back.text);
+      var added = 1;
+      String? note;
+      if (_inverse) {
+        try {
+          await _store.addCard(deck, _back.text, _front.text);
+          added++;
+        } on CardFrontTaken {
+          note = 'Carte inverse non ajoutée : cette question existe déjà '
+              'dans le paquet.';
+        }
+      }
+      await _store.rememberDeck(deck);
       if (!mounted) return;
       setState(() {
-        _added++;
+        _added += added;
+        _error = note;
         _front.clear();
         _back.clear();
       });
@@ -154,6 +174,7 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
       title: 'Supprimer la carte ?',
       message: 'La carte et son historique de révision seront effacés.',
       action: 'Supprimer',
+      danger: true,
     );
     if (!sure || !mounted) return;
     try {
@@ -164,12 +185,37 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
     }
   }
 
+  /// Du texte a été tapé et pas encore enregistré.
+  bool get _dirty =>
+      _front.text != (widget.card?.front ?? '') ||
+      _back.text != (widget.card?.back ?? '');
+
+  /// Retour arrière : si du texte serait perdu, on demande d'abord.
+  Future<void> _leave() async {
+    if (_dirty) {
+      final sure = await confirmDialog(
+        context,
+        title: _editing ? 'Abandonner les corrections ?' : 'Abandonner cette carte ?',
+        message: 'Ce que tu as tapé ne sera pas enregistré.',
+        action: 'Abandonner',
+        danger: true,
+      );
+      if (!sure) return;
+    }
+    if (mounted) Navigator.of(context).pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final deck = _deck;
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _leave();
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: Text(_editing ? 'Corriger la carte' : 'Nouvelle carte'),
         actions: [
@@ -237,6 +283,19 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
                     minLines: 6,
                     hint: 'Ce que tu dois retrouver',
                   ),
+                  if (!_editing) ...[
+                    const SizedBox(height: 8),
+                    SwitchListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                      title: const Text('Créer aussi la carte inverse'),
+                      subtitle: Text(
+                        'La réponse devient la question, et inversement.',
+                        style: TextStyle(color: scheme.onSurfaceVariant),
+                      ),
+                      value: _inverse,
+                      onChanged: (value) => setState(() => _inverse = value),
+                    ),
+                  ],
                   if (_error != null) ...[
                     const SizedBox(height: 16),
                     Text(_error!, style: TextStyle(color: scheme.error)),
@@ -259,12 +318,17 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
                 style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(54)),
                 onPressed: _busy ? null : _save,
-                child: Text(_editing ? 'Enregistrer' : 'Ajouter la carte'),
+                child: Text(_editing
+                    ? 'Enregistrer'
+                    : _inverse
+                        ? 'Ajouter les 2 cartes'
+                        : 'Ajouter la carte'),
               ),
             ),
           ],
         ),
       ),
+    ),
     );
   }
 }
@@ -303,7 +367,7 @@ class _SideField extends StatelessWidget {
       style: const TextStyle(fontSize: 17, height: 1.35),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: TextStyle(color: scheme.outlineVariant),
+        hintStyle: TextStyle(color: scheme.onSurfaceVariant.withAlpha(170)),
         filled: true,
         fillColor: scheme.surfaceContainer,
         contentPadding: const EdgeInsets.all(16),

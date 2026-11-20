@@ -1,18 +1,31 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
 import '../data/store.dart';
 import '../domain/format.dart';
 import '../domain/models.dart';
+import '../domain/stats.dart';
 import '../domain/study_session.dart';
 import 'card_editor_screen.dart';
 import 'common.dart';
 import 'theme.dart';
 
+/// Une réponse donnée dans cette séance : de quoi l'annuler et faire le bilan.
+class _Answered {
+  const _Answered(this.before, this.reviewId, this.grade, this.durationMs);
+
+  /// La carte telle qu'elle était avant la réponse.
+  final Flashcard before;
+  final int reviewId;
+  final Grade grade;
+  final int durationMs;
+}
+
 /// Une séance de révision : la question dans son bloc, un appui pour voir la
 /// réponse, puis la note. Les trois compteurs restent visibles en haut, celui
-/// de la carte affichée est souligné.
+/// de la carte affichée est souligné. ↶ annule la dernière réponse.
 class ReviewScreen extends StatefulWidget {
   const ReviewScreen({super.key, required this.store, required this.scope});
 
@@ -24,10 +37,25 @@ class ReviewScreen extends StatefulWidget {
 }
 
 class _ReviewScreenState extends State<ReviewScreen> {
+  /// Temps de réponse maximum compté (comme Anki) : un téléphone posé sur une
+  /// carte ne fausse pas les statistiques.
+  static const _maxAnswerTime = Duration(seconds: 60);
+
+  /// Après chaque changement d'écran, les appuis sont ignorés un instant : un
+  /// double appui ne note pas la carte suivante sans l'avoir vue.
+  static const _tapLock = Duration(milliseconds: 300);
+
   StudySession? _session;
   bool _showAnswer = false;
+
+  /// Réponses en cours d'enregistrement : l'annulation attend qu'elles soient
+  /// finies. Les réponses suivantes, elles, n'attendent pas.
+  int _saving = 0;
+  bool _undoing = false;
   final Stopwatch _watch = Stopwatch();
+  DateTime _lockedUntil = DateTime.fromMillisecondsSinceEpoch(0);
   Timer? _wakeUp;
+  final List<_Answered> _history = [];
 
   AppStore get _store => widget.store;
 
@@ -50,9 +78,15 @@ class _ReviewScreenState extends State<ReviewScreen> {
     _afterMove();
   }
 
-  /// Après chaque changement de carte : chronomètre, et réveil automatique si
-  /// la séance attend une carte en apprentissage.
+  bool get _locked => DateTime.now().isBefore(_lockedUntil);
+
+  void _lock() => _lockedUntil = DateTime.now().add(_tapLock);
+
+  /// Après chaque changement de carte : chronomètre, verrou anti double
+  /// appui, et réveil automatique si la séance attend une carte en
+  /// apprentissage.
   void _afterMove() {
+    _lock();
     _watch
       ..reset()
       ..start();
@@ -68,24 +102,65 @@ class _ReviewScreenState extends State<ReviewScreen> {
     }
   }
 
+  void _reveal() {
+    if (_showAnswer || _locked) return;
+    _lock();
+    setState(() => _showAnswer = true);
+  }
+
   Future<void> _answer(Grade grade) async {
-    final session = _session!;
-    final before = session.current!;
-    final durationMs = _watch.elapsedMilliseconds;
+    final session = _session;
+    final before = session?.current;
+    if (session == null || before == null || !_showAnswer || _locked) return;
+    final durationMs =
+        math.min(_watch.elapsedMilliseconds, _maxAnswerTime.inMilliseconds);
     final after = session.answer(grade);
-    setState(() => _showAnswer = false);
+    setState(() {
+      _showAnswer = false;
+      _saving++;
+    });
     _afterMove();
     try {
-      await _store.recordAnswer(
+      final reviewId = await _store.recordAnswer(
         before: before,
         after: after,
         grade: grade,
         durationMs: durationMs,
       );
+      _history.add(_Answered(before, reviewId, grade, durationMs));
     } catch (error) {
       if (mounted) {
         showSnack(context, 'Réponse non enregistrée : ${errorMessage(error)}');
       }
+    } finally {
+      _saving--;
+      if (mounted) setState(() {});
+    }
+  }
+
+  bool get _canUndo => _history.isNotEmpty && _saving == 0 && !_undoing;
+
+  /// Annule la dernière réponse : la carte revient, telle qu'avant.
+  Future<void> _undo() async {
+    final session = _session;
+    if (session == null || !_canUndo) return;
+    final last = _history.removeLast();
+    setState(() => _undoing = true);
+    try {
+      await _store.undoAnswer(before: last.before, reviewId: last.reviewId);
+      if (!mounted) return;
+      setState(() {
+        session.undo(last.before);
+        _showAnswer = false;
+      });
+      _afterMove();
+      showSnack(context, 'Réponse annulée');
+    } catch (error) {
+      _history.add(last);
+      if (mounted) showSnack(context, errorMessage(error));
+    } finally {
+      _undoing = false;
+      if (mounted) setState(() {});
     }
   }
 
@@ -104,6 +179,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
       if (updated != null) {
         session.replaceCurrent(updated);
       } else {
+        // Carte supprimée : ses réponses de la séance ne s'annulent plus.
+        _history.removeWhere((a) => a.before.id == card.id);
         session.dropCurrent();
         _showAnswer = false;
       }
@@ -119,6 +196,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
       appBar: AppBar(
         title: Text(widget.scope.label),
         actions: [
+          IconButton(
+            tooltip: 'Annuler la dernière réponse',
+            icon: const Icon(Icons.undo),
+            onPressed: _canUndo ? _undo : null,
+          ),
           if (card != null)
             IconButton(
               tooltip: 'Corriger la carte',
@@ -138,7 +220,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   Widget _card(BuildContext context, StudySession session, Flashcard card) {
-    final scheme = Theme.of(context).colorScheme;
     final size = 20 * _store.settings.textScale;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -157,7 +238,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
         Expanded(
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: _showAnswer ? null : () => setState(() => _showAnswer = true),
+            onTap: _showAnswer ? null : _reveal,
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
               child: Column(
@@ -177,15 +258,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
                       child: Text(card.back,
                           style: TextStyle(fontSize: size, height: 1.4)),
                     ),
-                  ] else
-                    Padding(
-                      padding: const EdgeInsets.only(top: 28),
-                      child: Text(
-                        'Réponds dans ta tête, puis touche l’écran.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: scheme.outlineVariant),
-                      ),
-                    ),
+                  ],
                 ],
               ),
             ),
@@ -198,7 +271,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
               : FilledButton(
                   style: FilledButton.styleFrom(
                       minimumSize: const Size.fromHeight(60)),
-                  onPressed: () => setState(() => _showAnswer = true),
+                  onPressed: _reveal,
                   child: const Text('Voir la réponse'),
                 ),
         ),
@@ -222,11 +295,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
                 style: FilledButton.styleFrom(
                   minimumSize: const Size.fromHeight(60),
                   padding: const EdgeInsets.symmetric(horizontal: 4),
-                  backgroundColor: scheme.surfaceContainerHighest,
                   foregroundColor: signal.grade(grade),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
                 ),
                 onPressed: () => _answer(grade),
                 child: Column(
@@ -258,28 +327,28 @@ class _ReviewScreenState extends State<ReviewScreen> {
         Grade.easy => 'Facile',
       };
 
-  /// Rien à montrer : séance terminée, ou attente d'une carte en
-  /// apprentissage.
+  /// Rien à montrer : séance terminée (avec son bilan), ou attente d'une
+  /// carte en apprentissage.
   Widget _pause(BuildContext context, StudySession session) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final until = session.waitingUntil;
     final String title;
-    final String message;
+    final String? message;
     if (until != null) {
       title = 'Pause';
       message = 'Une carte en apprentissage revient dans '
           '${formatDelay(until.difference(DateTime.now().toUtc()))}. '
           'Elle s’affichera toute seule si tu restes ici.';
-    } else if (session.answered == 0) {
+    } else if (_history.isEmpty) {
       title = 'Rien à réviser';
       message = 'Tout est à jour ici pour l’instant.';
     } else {
       title = 'Séance terminée';
-      message = session.answered == 1
-          ? '1 réponse enregistrée.'
-          : '${session.answered} réponses enregistrées.';
+      message = null;
     }
+    final passed = _history.where((a) => a.grade != Grade.again).length;
+    final ms = _history.fold(0, (sum, a) => sum + a.durationMs);
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -289,10 +358,25 @@ class _ReviewScreenState extends State<ReviewScreen> {
           Text(title,
               textAlign: TextAlign.center,
               style: theme.textTheme.headlineSmall),
-          const SizedBox(height: 8),
-          Text(message,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: scheme.onSurfaceVariant)),
+          if (message != null) ...[
+            const SizedBox(height: 8),
+            Text(message,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: scheme.onSurfaceVariant)),
+          ],
+          if (_history.isNotEmpty) ...[
+            const SizedBox(height: 20),
+            Panel(
+              child: Row(
+                children: [
+                  _Figure('${_history.length}',
+                      _history.length > 1 ? 'cartes' : 'carte'),
+                  _Figure(formatStudyTime(ms), 'de révision'),
+                  _Figure(formatPercent(passed / _history.length), 'réussite'),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 28),
           FilledButton(
             style:
@@ -300,6 +384,30 @@ class _ReviewScreenState extends State<ReviewScreen> {
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('Retour'),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Un chiffre du bilan, avec son nom dessous.
+class _Figure extends StatelessWidget {
+  const _Figure(this.value, this.label);
+
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Expanded(
+      child: Column(
+        children: [
+          Text(value,
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 2),
+          Text(label,
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
         ],
       ),
     );
