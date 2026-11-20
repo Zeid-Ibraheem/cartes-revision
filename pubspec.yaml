@@ -5,7 +5,7 @@ publish_to: 'none'
 # La version n'est écrite qu'ici. tools/release.sh la change et crée
 # l'étiquette ; GitHub construit l'APK avec ce numéro.
 # Première publication : tools/release.sh minor  (0.0.0 -> 0.1.0)
-version: 0.5.0+1
+version: 0.6.0+1
 
 environment:
   sdk: ^3.9.0

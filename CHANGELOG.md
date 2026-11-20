@@ -5,6 +5,8 @@ Les changements de chaque version. Format : [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-20
+
 ### Ajouté
 - Annuler la dernière réponse pendant une séance (↶ en haut) : la carte revient telle qu'avant, et la réponse disparaît des statistiques. Plusieurs annulations d'affilée possibles.
 - Bilan en fin de séance : cartes, temps et pourcentage de réussite.
