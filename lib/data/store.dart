@@ -13,6 +13,21 @@ import 'database.dart';
 import 'fsrs_scheduler.dart';
 
 /// Ce qu'on révise : tout, un dossier, ou un paquet.
+/// Résultat de [AppStore.exportCards].
+class CardExport {
+  const CardExport({
+    required this.text,
+    required this.fileName,
+    required this.deckCount,
+    required this.cardCount,
+  });
+
+  final String text;
+  final String fileName;
+  final int deckCount;
+  final int cardCount;
+}
+
 sealed class StudyScope {
   const StudyScope();
 
@@ -425,6 +440,37 @@ class AppStore extends ChangeNotifier {
         FolderCards(:final folder) => _db.cards(folder: folder),
         DeckCards(:final deck) => _db.cards(deckId: deck.id),
       };
+
+  /// Les cartes de [scope] au format des fichiers de cartes, prêtes à être
+  /// enregistrées puis réimportées (ici ou sur un autre téléphone).
+  /// Sans les dates de révision ni l'historique.
+  Future<CardExport> exportCards(StudyScope scope, DateTime now) async {
+    final cards = await cardsIn(scope);
+    final byDeck = <int, List<Flashcard>>{};
+    for (final card in cards) {
+      byDeck.putIfAbsent(card.deckId, () => []).add(card);
+    }
+    final parsed = [
+      for (final deck in decks)
+        if (byDeck[deck.id] case final deckCards?)
+          ParsedDeck(deck.folder, deck.name)
+            ..cards.addAll(
+                deckCards.map((card) => ParsedCard(card.front, card.back))),
+    ]..sort((a, b) {
+        final byFolder = a.folder.compareTo(b.folder);
+        return byFolder != 0 ? byFolder : a.name.compareTo(b.name);
+      });
+    final text = writeCardFile(parsed,
+        header: 'Exporté depuis Cartes le ${now.day.toString().padLeft(2, '0')}/'
+            '${now.month.toString().padLeft(2, '0')}/${now.year}.\n'
+            'Se réimporte avec le bouton + › Importer un fichier.');
+    return CardExport(
+      text: text,
+      fileName: exportFileName(scope.label, now),
+      deckCount: parsed.length,
+      cardCount: cards.length,
+    );
+  }
 
   /// Prépare une séance avec les réglages actuels.
   Future<StudySession> startSession(StudyScope scope) async {

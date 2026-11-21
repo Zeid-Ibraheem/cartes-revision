@@ -102,7 +102,10 @@ ParsedFile parseCardFile(String text, {required String fallbackDeck}) {
     final trimmed = raw.trim();
     if (trimmed.isEmpty) continue;
 
-    if (trimmed.startsWith('#')) {
+    // Une ligne avec tabulation est une carte, même si la question commence
+    // par « # » (« #include », « # de pages »…).
+    final tab = raw.indexOf('\t');
+    if (trimmed.startsWith('#') && tab < 0) {
       final match = _directive.firstMatch(trimmed);
       if (match == null) continue; // simple commentaire
       final keyword = match.group(1)!.toLowerCase();
@@ -121,7 +124,6 @@ ParsedFile parseCardFile(String text, {required String fallbackDeck}) {
       continue;
     }
 
-    final tab = raw.indexOf('\t');
     if (tab < 0) {
       issues.add(FileIssue(lineNumber,
           'pas de tabulation entre la question et la réponse : ligne ignorée'));
@@ -149,6 +151,60 @@ ParsedFile parseCardFile(String text, {required String fallbackDeck}) {
   }
 
   return ParsedFile(decks, issues);
+}
+
+/// Écrit des paquets au format des fichiers de cartes : l'inverse de
+/// [parseCardFile]. Réimporter le texte obtenu redonne les mêmes paquets,
+/// rangés dans les mêmes dossiers. Les paquets vides sont omis.
+String writeCardFile(Iterable<ParsedDeck> decks, {String? header}) {
+  final buffer = StringBuffer();
+  if (header != null) {
+    for (final line in const LineSplitter().convert(header)) {
+      buffer.writeln('# $line');
+    }
+  }
+  String? folder;
+  for (final deck in decks) {
+    if (deck.cards.isEmpty) continue;
+    if (buffer.isNotEmpty) buffer.writeln();
+    if (deck.folder != folder) {
+      buffer.writeln('# dossier: ${deck.folder}');
+      folder = deck.folder;
+    }
+    buffer.writeln('# paquet: ${deck.name}');
+    for (final card in deck.cards) {
+      buffer.writeln('${_flatten(card.front)}\t${_flatten(card.back)}');
+    }
+  }
+  return buffer.toString();
+}
+
+/// Une face sur une seule ligne : retours à la ligne en « <br> ».
+String _flatten(String text) => text
+    .replaceAll('\r\n', '\n')
+    .replaceAll('\t', ' ')
+    .replaceAll('\n', '<br>');
+
+/// Nom de fichier d'export : « cartes-r3-07-2026-11-21.txt ».
+String exportFileName(String label, DateTime day) {
+  const accents = {
+    'à': 'a', 'â': 'a', 'ä': 'a', 'ç': 'c', 'é': 'e', 'è': 'e', 'ê': 'e',
+    'ë': 'e', 'î': 'i', 'ï': 'i', 'ô': 'o', 'ö': 'o', 'ù': 'u', 'û': 'u',
+    'ü': 'u', 'ÿ': 'y', 'œ': 'oe', 'æ': 'ae',
+  };
+  final plain = label
+      .toLowerCase()
+      .split('')
+      .map((char) => accents[char] ?? char)
+      .join();
+  final slug = plain
+      .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+      .replaceAll(RegExp(r'^-+|-+$'), '');
+  String two(int value) => value.toString().padLeft(2, '0');
+  final date = '${day.year}-${two(day.month)}-${two(day.day)}';
+  return slug.isEmpty || slug == 'cartes'
+      ? 'cartes-$date.txt'
+      : 'cartes-$slug-$date.txt';
 }
 
 /// Texte d'une face : « <br> » devient un retour à la ligne, les tabulations

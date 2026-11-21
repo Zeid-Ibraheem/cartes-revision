@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:material_ui/material_ui.dart';
@@ -97,6 +99,10 @@ class _HomeScreenState extends State<HomeScreen> {
               _DialAction('Importer un fichier', Icons.download, () {
                 importCardFiles(context, store);
               }),
+              if (!store.isEmpty)
+                _DialAction('Exporter toutes les cartes', Icons.upload, () {
+                  exportCards(context, store, const AllCards());
+                }),
               _DialAction('Créer un dossier', Icons.create_new_folder_outlined,
                   () => _newFolder(context)),
               _DialAction('Créer un paquet', Icons.style_outlined,
@@ -374,6 +380,7 @@ class _HomeScreenState extends State<HomeScreen> {
         SheetAction('cards', 'Voir les cartes', Icons.list),
         SheetAction('stats', 'Statistiques', Icons.bar_chart),
         SheetAction('add', 'Écrire des cartes', Icons.edit_outlined),
+        SheetAction('export', 'Exporter ce paquet', Icons.upload),
         SheetAction('rename', 'Renommer ou déplacer', Icons.drive_file_move_outline),
         SheetAction('delete', 'Supprimer', Icons.delete_outline, danger: true),
       ],
@@ -390,6 +397,8 @@ class _HomeScreenState extends State<HomeScreen> {
         _push(context, StatsScreen(store: store, scope: DeckCards(deck)));
       case 'add':
         _push(context, CardEditorScreen(store: store, deck: deck));
+      case 'export':
+        await exportCards(context, store, DeckCards(deck));
       case 'rename':
         final moved = await renameDeck(context, store, deck);
         if (moved != null) await store.reveal(moved.folder);
@@ -409,6 +418,7 @@ class _HomeScreenState extends State<HomeScreen> {
         SheetAction('stats', 'Statistiques', Icons.bar_chart),
         SheetAction('deck', 'Nouveau paquet ici', Icons.style_outlined),
         SheetAction('sub', 'Nouveau sous-dossier', Icons.create_new_folder_outlined),
+        SheetAction('export', 'Exporter le dossier', Icons.upload),
         SheetAction('rename', 'Renommer', Icons.edit_outlined),
         SheetAction('move', 'Déplacer dans…', Icons.drive_file_move_outline),
         SheetAction('delete', 'Supprimer le dossier', Icons.delete_outline,
@@ -432,6 +442,8 @@ class _HomeScreenState extends State<HomeScreen> {
         await _newDeck(context, folder: folder.path);
       case 'sub':
         await _newSubfolder(context, folder);
+      case 'export':
+        await exportCards(context, store, FolderCards(folder.path));
       case 'rename':
         final values = await showFieldsDialog(
           context,
@@ -603,6 +615,31 @@ Future<void> importCardFiles(BuildContext context, AppStore store) async {
       ],
     ),
   );
+}
+
+/// Enregistre les cartes de [scope] dans un fichier texte choisi par
+/// l'utilisateur (Téléchargements, Drive…). Le fichier se réimporte tel quel.
+Future<void> exportCards(
+    BuildContext context, AppStore store, StudyScope scope) async {
+  try {
+    final export = await store.exportCards(scope, DateTime.now());
+    if (export.cardCount == 0) {
+      if (context.mounted) showSnack(context, 'Aucune carte à exporter');
+      return;
+    }
+    final saved = await FilePicker.saveFile(
+      dialogTitle: 'Enregistrer les cartes',
+      fileName: export.fileName,
+      bytes: Uint8List.fromList(utf8.encode(export.text)),
+    );
+    if (saved == null || !context.mounted) return;
+    showSnack(
+        context,
+        '${export.cardCount} carte(s) de ${export.deckCount} paquet(s) '
+        'enregistrée(s) dans ${export.fileName}');
+  } catch (error) {
+    if (context.mounted) showSnack(context, errorMessage(error));
+  }
 }
 
 String _issuesText(String fileName, ImportReport report) {

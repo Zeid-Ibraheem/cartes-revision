@@ -5,6 +5,12 @@ Les changements de chaque version. Format : [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+### Ajouté
+- Exporter : appui long sur un paquet ou un dossier › Exporter, ou bouton + › Exporter toutes les cartes. Le fichier texte (`cartes-<nom>-<date>.txt`) est au format d'import et se réimporte tel quel, chaque paquet revenant à sa place. Sans les dates de révision ni l'historique.
+
+### Changé
+- Import : une ligne avec tabulation est une carte même si elle commence par « # » (avant, elle était prise pour un commentaire).
+
 ## [0.8.0] - 2026-11-20
 
 ### Ajouté

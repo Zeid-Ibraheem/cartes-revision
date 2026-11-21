@@ -18,7 +18,7 @@ Autre question<TABULATION>Ligne 1<br>Ligne 2
 | `# paquet: Contrôle 1` | Les cartes suivantes vont dans ce paquet. |
 | `Question` + tabulation + `Réponse` | Une carte. |
 | `<br>` | Un retour à la ligne dans la question ou la réponse. |
-| Une autre ligne qui commence par `#` | Commentaire, ignoré. |
+| Une autre ligne qui commence par `#`, sans tabulation | Commentaire, ignoré. Avec une tabulation, c'est une carte (`#include` + tabulation + réponse). |
 | Une ligne vide | Ignorée. |
 
 - Sans `# dossier:`, les cartes vont dans le dossier « Divers ».
@@ -37,6 +37,12 @@ Une carte est reconnue par son **paquet** (dossier + nom) et sa **question**.
 - Question nouvelle : carte ajoutée.
 - Changer le texte d'une question crée une nouvelle carte. Pour corriger une question sans perdre son historique, corrige-la dans l'appli.
 - Une carte retirée du fichier n'est pas supprimée de l'appli.
+
+## Exporter
+
+Appui long sur un paquet ou un dossier › Exporter, ou bouton + › Exporter toutes les cartes. L'appli écrit un fichier dans ce format (`cartes-<nom>-<date>.txt`), avec les chemins complets des dossiers : le réimporter, ici ou sur un autre téléphone, remet chaque paquet à sa place.
+
+Le fichier contient les questions et les réponses, **pas** les dates de révision ni l'historique : réimportées sur un téléphone neuf, les cartes repartent comme nouvelles. Réimportées dans la même appli, elles sont reconnues (rien ne change).
 
 ## Attention à la tabulation
 

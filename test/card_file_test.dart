@@ -91,4 +91,44 @@ void main() {
     expect(cleanName('  R3.07   Contrôle\n1 '), 'R3.07 Contrôle 1');
     expect(cleanSide('  ligne 1  \r\n  ligne 2 \t '), 'ligne 1\nligne 2');
   });
+
+  test('écrire puis relire redonne les mêmes paquets', () {
+    final source = [
+      ParsedDeck('Cours/R3.07', 'Contrôle 1')
+        ..cards.addAll([
+          ParsedCard('Débit ?', 'Ligne 1\nLigne 2'),
+          ParsedCard('#include sert à ?', 'inclure un fichier'),
+        ]),
+      ParsedDeck('Cours/R3.07', 'Vide'),
+      ParsedDeck('Connaissances', 'Versets')
+        ..cards.add(ParsedCard('Q', 'R')),
+    ];
+    final text = writeCardFile(source, header: 'Exporté\nle 21/11');
+    expect(text, startsWith('# Exporté\n# le 21/11\n'));
+    expect(text, isNot(contains('Vide')), reason: 'paquet vide omis');
+    final back = parseCardFile(text, fallbackDeck: 'x');
+    expect(back.issues, isEmpty);
+    expect(back.decks.map((d) => '${d.folder}|${d.name}'),
+        ['Cours/R3.07|Contrôle 1', 'Connaissances|Versets']);
+    expect(back.decks.first.cards.map((c) => '${c.front}=${c.back}'), [
+      'Débit ?=Ligne 1\nLigne 2',
+      '#include sert à ?=inclure un fichier',
+    ]);
+  });
+
+  test('une ligne avec tabulation est une carte même si elle commence par #', () {
+    final file = parseCardFile('# paquet: P\n# commentaire\n#1\tun\n',
+        fallbackDeck: 'f');
+    expect(file.decks.single.cards.single.front, '#1');
+    expect(file.issues, isEmpty);
+  });
+
+  test("nom du fichier d'export", () {
+    final day = DateTime(2026, 11, 21);
+    expect(exportFileName('R3.07', day), 'cartes-r3-07-2026-11-21.txt');
+    expect(exportFileName('Théologie & Fiqh', day),
+        'cartes-theologie-fiqh-2026-11-21.txt');
+    expect(exportFileName('Tout', day), 'cartes-tout-2026-11-21.txt');
+    expect(exportFileName('???', day), 'cartes-2026-11-21.txt');
+  });
 }

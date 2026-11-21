@@ -370,7 +370,29 @@ void main() {
     expect(await store.cardsIn(const AllCards()), hasLength(3));
   });
 
-  test('le dernier paquet utilisé est retenu', () async {
+  test('exporter un dossier, puis le réimporter ailleurs', () async {
+    final store = await AppStore.open(database: db, clock: () => now);
+    await store.importText(
+        '# dossier: Cours/R3.07\n# paquet: P1\na\tun<br>deux\n'
+        '# dossier: Cours\n# paquet: P2\nb\t2\n'
+        '# dossier: Autre\n# paquet: P3\nc\t3\n',
+        fallbackDeck: 'f');
+    final export = await store.exportCards(const FolderCards('Cours'), now);
+    expect(export.cardCount, 2);
+    expect(export.deckCount, 2);
+    expect(export.fileName, startsWith('cartes-cours-'));
+    expect(export.text, contains('# dossier: Cours/R3.07\n# paquet: P1\na\tun<br>deux\n'));
+    expect(export.text, isNot(contains('P3')));
+
+    final all = await store.exportCards(const AllCards(), now);
+    expect(all.cardCount, 3);
+    // Le même texte réimporté : rien de nouveau.
+    final report = await store.importText(all.text, fallbackDeck: 'f');
+    expect(report.added, 0);
+    expect(report.unchanged, 3);
+  });
+
+    test('le dernier paquet utilisé est retenu', () async {
     final store = await AppStore.open(database: db, clock: () => now);
     final a = await store.createDeck('A', 'P1');
     final b = await store.createDeck('B', 'P2');
