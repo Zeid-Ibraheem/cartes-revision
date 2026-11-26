@@ -11,6 +11,7 @@ import '../data/store.dart';
 import '../domain/card_file.dart';
 import '../domain/folder_path.dart';
 import '../domain/models.dart';
+import '../domain/shared_files.dart';
 import '../domain/stats.dart';
 import '../domain/study_session.dart';
 import 'card_editor_screen.dart';
@@ -572,27 +573,95 @@ Future<void> importCardFiles(BuildContext context, AppStore store) async {
   );
   if (files.isEmpty || !context.mounted) return;
 
-  var added = 0;
-  var updated = 0;
-  final details = <String>[];
+  final read = <IncomingFile>[];
   for (final file in files) {
     try {
       final bytes = <int>[];
       await for (final chunk in file.readAsByteStream()) {
         bytes.addAll(chunk);
       }
-      final report = await store.importBytes(bytes, file.name);
-      added += report.added;
-      updated += report.updated;
-      if (report.issues.isNotEmpty) details.add(_issuesText(file.name, report));
+      read.add(IncomingFile(file.name, bytes: bytes));
     } catch (error) {
-      details.add('${file.name}\nLecture impossible : $error');
+      read.add(IncomingFile(file.name, error: 'lecture impossible : $error'));
     }
   }
   try {
     await FilePicker.clearTemporaryFiles();
   } catch (_) {
     // Pas grave : Android vide aussi ce cache tout seul.
+  }
+  if (!context.mounted) return;
+  await _importAll(context, store, read);
+}
+
+/// Fichiers envoyés par une autre appli (« Partager › Cartes »,
+/// « Ouvrir avec › Cartes ») : aperçu de ce qui sera importé et où, puis
+/// import si on confirme. Rien n'est importé sans confirmation.
+Future<void> importReceivedFiles(
+    BuildContext context, AppStore store, List<IncomingFile> files) async {
+  final preview = <String>[];
+  var cards = 0;
+  for (final file in files) {
+    final bytes = file.bytes;
+    if (bytes == null) {
+      preview.add('${file.name}\nIllisible : ${file.error ?? 'erreur inconnue'}');
+      continue;
+    }
+    final parsed = store.parseBytes(bytes, file.name);
+    cards += parsed.cardCount;
+    preview.add([
+      file.name,
+      if (parsed.cardCount == 0) 'Aucune carte trouvée (format attendu : '
+          'question, tabulation, réponse).',
+      ...importPreview(parsed),
+      if (parsed.issues.isNotEmpty)
+        '${parsed.issues.length} ligne(s) ignorée(s) ou remarque(s)',
+    ].join('\n'));
+  }
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text(cards == 0
+          ? 'Rien à importer'
+          : 'Importer $cards carte${cards > 1 ? 's' : ''} ?'),
+      content: SingleChildScrollView(child: Text(preview.join('\n\n'))),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: Text(cards == 0 ? 'Fermer' : 'Annuler'),
+        ),
+        if (cards > 0)
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Importer'),
+          ),
+      ],
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+  await _importAll(context, store, files);
+}
+
+/// Importe des fichiers déjà lus, puis dit ce qui a été fait.
+Future<void> _importAll(
+    BuildContext context, AppStore store, List<IncomingFile> files) async {
+  var added = 0;
+  var updated = 0;
+  final details = <String>[];
+  for (final file in files) {
+    final bytes = file.bytes;
+    if (bytes == null) {
+      details.add('${file.name}\n${file.error ?? 'lecture impossible'}');
+      continue;
+    }
+    try {
+      final report = await store.importBytes(bytes, file.name);
+      added += report.added;
+      updated += report.updated;
+      if (report.issues.isNotEmpty) details.add(_issuesText(file.name, report));
+    } catch (error) {
+      details.add('${file.name}\nImport impossible : ${errorMessage(error)}');
+    }
   }
   if (!context.mounted) return;
 

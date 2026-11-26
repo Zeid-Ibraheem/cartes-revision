@@ -131,4 +131,19 @@ void main() {
     expect(exportFileName('Tout', day), 'cartes-tout-2026-11-21.txt');
     expect(exportFileName('???', day), 'cartes-2026-11-21.txt');
   });
+
+  test("aperçu avant import : où iront les cartes", () {
+    final file = parseCardFile(
+        '# dossier: Cours/R3.07\n# paquet: C1\na\t1\nb\t2\n'
+        '# dossier: Autre\n# paquet: P\nc\t3\n',
+        fallbackDeck: 'f');
+    expect(importPreview(file), [
+      'Cours › R3.07 › C1 : 2 cartes',
+      'Autre › P : 1 carte',
+    ]);
+    expect(importPreview(file, limit: 1), [
+      'Cours › R3.07 › C1 : 2 cartes',
+      '… et 1 autre(s) paquet(s)',
+    ]);
+  });
 }

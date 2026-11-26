@@ -4,6 +4,7 @@
 
 - L'appli n'a pas la permission Internet : les cartes et l'historique ne quittent pas le téléphone.
 - Le code est public : aucune donnée personnelle dans le dépôt (noms de machines, adresses, comptes, clés).
+- Fichiers reçus d'autres applis (« Partager », « Ouvrir avec ») : seulement du texte, seulement par des adresses `content://` (accès accordé par l'appli qui envoie, aucune permission de stockage demandée), 5 Mo et 20 fichiers au plus, décodés en UTF-8 sans planter sur un octet invalide, puis lus par le même lecteur que l'import. Rien n'est importé sans confirmation, après un aperçu de ce qui sera ajouté et où.
 - L'APK publié est signé, toujours avec la même clé, gardée hors du dépôt (`docs/signature-android.md`).
 
 ## Les verrous

@@ -329,6 +329,11 @@ class AppStore extends ChangeNotifier {
     return importText(text, fallbackDeck: _baseName(fileName));
   }
 
+  /// Lit un fichier sans rien importer (aperçu avant import).
+  ParsedFile parseBytes(List<int> bytes, String fileName) => parseCardFile(
+      utf8.decode(bytes, allowMalformed: true),
+      fallbackDeck: _baseName(fileName));
+
   Future<ImportReport> importText(String text,
       {required String fallbackDeck}) async {
     final parsed = parseCardFile(text, fallbackDeck: fallbackDeck);

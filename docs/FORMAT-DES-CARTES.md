@@ -38,6 +38,12 @@ Une carte est reconnue par son **paquet** (dossier + nom) et sa **question**.
 - Changer le texte d'une question crée une nouvelle carte. Pour corriger une question sans perdre son historique, corrige-la dans l'appli.
 - Une carte retirée du fichier n'est pas supprimée de l'appli.
 
+## Envoyer un fichier à l'appli
+
+Depuis une autre appli (Claude, Fichiers, une messagerie…) : **Partager › Cartes**, ou **Ouvrir avec › Cartes** pour un `.txt`. Un texte partagé directement (sans fichier) marche aussi. L'appli montre d'abord où iront les cartes (dossier › paquet : nombre de cartes) et n'importe rien tant qu'on n'a pas appuyé sur « Importer ».
+
+Limites : 5 Mo par fichier, 20 fichiers à la fois.
+
 ## Exporter
 
 Appui long sur un paquet ou un dossier › Exporter, ou bouton + › Exporter toutes les cartes. L'appli écrit un fichier dans ce format (`cartes-<nom>-<date>.txt`), avec les chemins complets des dossiers : le réimporter, ici ou sur un autre téléphone, remet chaque paquet à sa place.

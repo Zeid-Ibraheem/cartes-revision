@@ -5,6 +5,9 @@ Les changements de chaque version. Format : [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+### Ajouté
+- Recevoir des fichiers : Cartes apparaît dans « Partager » et « Ouvrir avec » pour les fichiers texte (et le texte partagé). Un aperçu montre où iront les cartes (dossier › paquet : nombre de cartes) ; rien n'est importé sans appuyer sur « Importer ». 5 Mo et 20 fichiers au plus, aucune permission en plus.
+
 ## [0.9.0] - 2026-11-21
 
 ### Ajouté

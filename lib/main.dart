@@ -1,9 +1,11 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'app_info.dart';
+import 'data/android_shared_files.dart';
 import 'data/notification_reminders.dart';
 import 'data/store.dart';
 import 'domain/settings.dart';
+import 'domain/shared_files.dart';
 import 'ui/home_screen.dart';
 import 'ui/review_screen.dart';
 import 'ui/theme.dart';
@@ -49,6 +51,20 @@ Future<void> main() async {
     navigatorKey: navigator,
     onStart: launchedByReminder ? openReview : null,
   ));
+
+  // Fichiers envoyés depuis une autre appli : aperçu puis import si on
+  // confirme, par-dessus l'écran ouvert.
+  final shared = AndroidSharedFiles();
+  Future<void> receive(List<IncomingFile> files) async {
+    final context = navigator.currentState?.overlay?.context;
+    if (files.isEmpty || context == null) return;
+    await importReceivedFiles(context, store, files);
+  }
+
+  shared.listen(receive);
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+    await receive(await shared.initial());
+  });
   await store.askReminderPermissionOnce();
 }
 

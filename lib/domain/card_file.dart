@@ -153,6 +153,20 @@ ParsedFile parseCardFile(String text, {required String fallbackDeck}) {
   return ParsedFile(decks, issues);
 }
 
+/// Où iront les cartes d'un fichier, une ligne par paquet :
+/// « Cours › R3.07 › Contrôle 1 : 12 cartes ». Au plus [limit] lignes, puis
+/// « … et N autre(s) paquet(s) ».
+List<String> importPreview(ParsedFile file, {int limit = 6}) {
+  final lines = [
+    for (final deck in file.decks.take(limit))
+      '${displayFolder(deck.folder)} › ${deck.name} : '
+          '${deck.cards.length} carte${deck.cards.length > 1 ? 's' : ''}',
+  ];
+  final more = file.decks.length - limit;
+  if (more > 0) lines.add('… et $more autre(s) paquet(s)');
+  return lines;
+}
+
 /// Écrit des paquets au format des fichiers de cartes : l'inverse de
 /// [parseCardFile]. Réimporter le texte obtenu redonne les mêmes paquets,
 /// rangés dans les mêmes dossiers. Les paquets vides sont omis.
