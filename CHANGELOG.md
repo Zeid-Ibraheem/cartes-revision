@@ -5,6 +5,8 @@ Les changements de chaque version. Format : [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-28
+
 ### Ajouté
 - Façon de répondre par paquet (écran du paquet, ou `# mode:` dans le fichier) : classique, **écrire** la réponse au clavier, ou **QCM**.
 - Écrire : réponse exacte lettre pour lettre = « Correct » en un appui (note modifiable) ; sinon l'appli montre la différence lettre par lettre et dit si c'est juste aux accents ou majuscules près, ou à combien de lettres près ; c'est toi qui te notes.
