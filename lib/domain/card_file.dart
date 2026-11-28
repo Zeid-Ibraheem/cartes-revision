@@ -4,23 +4,49 @@ library;
 import 'dart:convert';
 
 import 'folder_path.dart';
+import 'models.dart';
 
 /// Dossier utilisé quand le fichier n'en indique pas.
 const defaultFolder = 'Divers';
 
 class ParsedCard {
-  ParsedCard(this.front, this.back);
+  ParsedCard(this.front, this.back, [this.wrongAnswers = const []]);
 
   final String front;
   String back;
+
+  /// Mauvaises réponses pour le QCM (colonnes après la réponse).
+  List<String> wrongAnswers;
 }
 
 class ParsedDeck {
-  ParsedDeck(this.folder, this.name);
+  ParsedDeck(this.folder, this.name, {this.mode});
 
   final String folder;
   final String name;
+
+  /// Façon de réviser donnée par « # mode: » ; `null` = ne pas la changer.
+  AnswerMode? mode;
   final List<ParsedCard> cards = [];
+}
+
+/// Le mot écrit après « # mode: » pour chaque façon de réviser.
+String answerModeWord(AnswerMode mode) => switch (mode) {
+      AnswerMode.reveal => 'classique',
+      AnswerMode.type => 'écrire',
+      AnswerMode.choice => 'qcm',
+    };
+
+/// Lit le mot écrit après « # mode: » (accents et majuscules sans
+/// importance). `null` s'il n'est pas reconnu.
+AnswerMode? parseAnswerMode(String word) {
+  final plain = word.trim().toLowerCase().replaceAll('é', 'e').replaceAll('è', 'e');
+  return switch (plain) {
+    'classique' || 'normal' || 'voir' => AnswerMode.reveal,
+    'ecrire' || 'clavier' || 'ecrit' => AnswerMode.type,
+    'qcm' || 'choix' || 'choix multiples' => AnswerMode.choice,
+    _ => null,
+  };
 }
 
 /// Une ligne du fichier qui n'a pas pu être lue, ou qui mérite un avertissement.
@@ -67,7 +93,7 @@ class ImportReport {
 }
 
 final _directive =
-    RegExp(r'^#\s*(dossier|paquet)\s*:(.*)$', caseSensitive: false);
+    RegExp(r'^#\s*(dossier|paquet|mode)\s*:(.*)$', caseSensitive: false);
 final _lineBreak = RegExp(r'<br\s*/?>', caseSensitive: false);
 
 /// Lit le texte d'un fichier de cartes.
@@ -82,15 +108,18 @@ ParsedFile parseCardFile(String text, {required String fallbackDeck}) {
 
   var folder = defaultFolder;
   String? deckName;
+  AnswerMode? mode;
 
   ParsedDeck currentDeck() {
     final name = deckName ?? fallbackDeck;
-    return byKey.putIfAbsent('$folder\n$name', () {
+    final deck = byKey.putIfAbsent('$folder\n$name', () {
       final deck = ParsedDeck(folder, name);
       decks.add(deck);
       byFront[deck] = {};
       return deck;
     });
+    if (mode != null) deck.mode = mode;
+    return deck;
   }
 
   if (text.startsWith('﻿')) text = text.substring(1);
@@ -109,6 +138,16 @@ ParsedFile parseCardFile(String text, {required String fallbackDeck}) {
       final match = _directive.firstMatch(trimmed);
       if (match == null) continue; // simple commentaire
       final keyword = match.group(1)!.toLowerCase();
+      if (keyword == 'mode') {
+        final value = parseAnswerMode(match.group(2)!);
+        if (value == null) {
+          issues.add(FileIssue(lineNumber,
+              'mode inconnu (classique, écrire ou qcm) : ligne ignorée'));
+        } else {
+          mode = value;
+        }
+        continue;
+      }
       // Un dossier peut avoir plusieurs niveaux : « Cours/R3.07 ».
       final value = keyword == 'dossier'
           ? normalizeFolder(match.group(2)!)
@@ -118,8 +157,10 @@ ParsedFile parseCardFile(String text, {required String fallbackDeck}) {
       } else if (keyword == 'dossier') {
         folder = value;
         deckName = null;
+        mode = null;
       } else {
         deckName = value;
+        mode = null;
       }
       continue;
     }
@@ -129,8 +170,17 @@ ParsedFile parseCardFile(String text, {required String fallbackDeck}) {
           'pas de tabulation entre la question et la réponse : ligne ignorée'));
       continue;
     }
-    final front = _clean(raw.substring(0, tab));
-    final back = _clean(raw.substring(tab + 1));
+    // Question, réponse, puis éventuellement les mauvaises réponses du QCM.
+    final columns = raw.split('\t');
+    final front = _clean(columns[0]);
+    final back = _clean(columns[1]);
+    final wrong = <String>[];
+    for (final column in columns.skip(2)) {
+      final value = _clean(column);
+      if (value.isNotEmpty && value != back && !wrong.contains(value)) {
+        wrong.add(value);
+      }
+    }
     if (front.isEmpty || back.isEmpty) {
       issues.add(FileIssue(
           lineNumber, 'question ou réponse vide : ligne ignorée'));
@@ -140,12 +190,14 @@ ParsedFile parseCardFile(String text, {required String fallbackDeck}) {
     final deck = currentDeck();
     final known = byFront[deck]![front];
     if (known != null) {
-      known.back = back;
+      known
+        ..back = back
+        ..wrongAnswers = wrong;
       issues.add(FileIssue(lineNumber,
           'question déjà présente plus haut dans ce paquet : cette réponse remplace la précédente'));
       continue;
     }
-    final card = ParsedCard(front, back);
+    final card = ParsedCard(front, back, wrong);
     deck.cards.add(card);
     byFront[deck]![front] = card;
   }
@@ -186,8 +238,14 @@ String writeCardFile(Iterable<ParsedDeck> decks, {String? header}) {
       folder = deck.folder;
     }
     buffer.writeln('# paquet: ${deck.name}');
+    final mode = deck.mode;
+    if (mode != null && mode != AnswerMode.reveal) {
+      buffer.writeln('# mode: ${answerModeWord(mode)}');
+    }
     for (final card in deck.cards) {
-      buffer.writeln('${_flatten(card.front)}\t${_flatten(card.back)}');
+      buffer.writeln([card.front, card.back, ...card.wrongAnswers]
+          .map(_flatten)
+          .join('\t'));
     }
   }
   return buffer.toString();
@@ -239,6 +297,20 @@ String _oneLine(String text) => text.trim().replaceAll(RegExp(r'\s+'), ' ');
 /// Nettoie un nom de dossier ou de paquet saisi à la main, de la même façon
 /// que ceux lus dans un fichier.
 String cleanName(String text) => _oneLine(text);
+
+/// Nettoie des mauvaises réponses saisies à la main : sur une ligne chacune,
+/// sans vides, sans doublons ni la bonne réponse [answer].
+List<String> cleanWrongAnswers(Iterable<String> wrong, String answer) {
+  final right = cleanSide(answer);
+  final result = <String>[];
+  for (final item in wrong) {
+    final value = cleanSide(item).replaceAll('\n', ' ');
+    if (value.isNotEmpty && value != right && !result.contains(value)) {
+      result.add(value);
+    }
+  }
+  return result;
+}
 
 /// Nettoie une question ou une réponse saisie à la main : espaces de début et
 /// de fin retirés, retours à la ligne gardés.

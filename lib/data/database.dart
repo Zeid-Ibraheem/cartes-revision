@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
@@ -73,6 +75,7 @@ class CardFrontTaken implements Exception {
 ///
 /// Versions du schéma :
 /// 1. decks, cards, reviews, settings
+/// 2. decks.answer_mode (façon de réviser), cards.wrong_answers (QCM)
 ///
 /// Pour faire évoluer le schéma : ajouter une fonction _createV2, l'appeler
 /// dans onCreate ET dans onUpgrade (si oldVersion < 2), passer version à 2.
@@ -86,7 +89,7 @@ class AppDatabase {
   final String path;
 
   static const fileName = 'cartes.db';
-  static const _version = 1;
+  static const _version = 2;
 
   /// Ouvre la base. [factory] et [path] servent aux tests (base en mémoire).
   static Future<AppDatabase> open({
@@ -103,9 +106,10 @@ class AppDatabase {
         onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
         onCreate: (db, version) async {
           await _createV1(db);
+          await _migrateV2(db);
         },
         onUpgrade: (db, oldVersion, newVersion) async {
-          // Rien pour l'instant : une seule version du schéma.
+          if (oldVersion < 2) await _migrateV2(db);
         },
       ),
     );
@@ -167,6 +171,31 @@ class AppDatabase {
     ''');
   }
 
+  /// Version 2 : façon de réviser chaque paquet, et mauvaises réponses
+  /// écrites pour le QCM (liste JSON, NULL si aucune). Les données
+  /// existantes ne changent pas : tout paquet reste « classique ».
+  static Future<void> _migrateV2(Database db) async {
+    await db.execute(
+        "ALTER TABLE decks ADD COLUMN answer_mode TEXT NOT NULL DEFAULT 'reveal'");
+    await db.execute('ALTER TABLE cards ADD COLUMN wrong_answers TEXT');
+  }
+
+  static String? _wrongColumn(List<String> wrong) =>
+      wrong.isEmpty ? null : jsonEncode(wrong);
+
+  static List<String> _readWrong(Object? value) {
+    if (value is! String || value.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(value);
+      return decoded is List ? decoded.whereType<String>().toList() : const [];
+    } on FormatException {
+      return const [];
+    }
+  }
+
+  static AnswerMode _readMode(Object? value) => AnswerMode.values
+      .firstWhere((mode) => mode.name == value, orElse: () => AnswerMode.reveal);
+
   // Les états et les notes sont enregistrés par leur nom (« review »,
   // « good ») : réordonner les enums ne casse pas une base existante.
 
@@ -191,6 +220,7 @@ class AppDatabase {
       deckId: row['deck_id']! as int,
       front: row['front']! as String,
       back: row['back']! as String,
+      wrongAnswers: _readWrong(row['wrong_answers']),
       memory: Memory(
         state: LearningState.values.byName(row['state']! as String),
         step: row['step'] as int?,
@@ -206,6 +236,7 @@ class AppDatabase {
         id: row['id']! as int,
         folder: row['folder']! as String,
         name: row['name']! as String,
+        answerMode: _readMode(row['answer_mode']),
       );
 
   // ---------------------------------------------------------------- Paquets
@@ -214,7 +245,7 @@ class AppDatabase {
   /// [dayEnd] : fin de la journée de révision en cours.
   Future<List<DeckStats>> deckStats(DateTime dayEnd) async {
     final rows = await _db.rawQuery('''
-      SELECT d.id, d.folder, d.name,
+      SELECT d.id, d.folder, d.name, d.answer_mode,
              COUNT(c.id) AS total,
              COALESCE(SUM(c.last_review IS NULL), 0) AS fresh,
              COALESCE(SUM(c.last_review IS NOT NULL AND c.state <> 'review'
@@ -264,6 +295,11 @@ class AppDatabase {
       rethrow;
     }
   }
+
+  /// Change la façon de réviser un paquet.
+  Future<void> setDeckMode(int id, AnswerMode mode) => _db.update(
+      'decks', {'answer_mode': mode.name},
+      where: 'id = ?', whereArgs: [id]);
 
   /// Supprime un paquet, ses cartes et leur historique.
   Future<void> deleteDeck(int id) =>
@@ -324,19 +360,26 @@ class AppDatabase {
   }
 
   Future<Flashcard> addCard(
-      int deckId, String front, String back, DateTime now) async {
+      int deckId, String front, String back, DateTime now,
+      {List<String> wrongAnswers = const []}) async {
     final memory = Memory.fresh(now);
     try {
       final id = await _db.insert('cards', {
         'deck_id': deckId,
         'front': front,
         'back': back,
+        'wrong_answers': _wrongColumn(wrongAnswers),
         ..._memoryColumns(memory),
         'created_at': _ms(now),
         'updated_at': _ms(now),
       });
       return Flashcard(
-          id: id, deckId: deckId, front: front, back: back, memory: memory);
+          id: id,
+          deckId: deckId,
+          front: front,
+          back: back,
+          memory: memory,
+          wrongAnswers: wrongAnswers);
     } on DatabaseException catch (error) {
       if (error.isUniqueConstraintError()) throw const CardFrontTaken();
       rethrow;
@@ -345,11 +388,19 @@ class AppDatabase {
 
   /// Corrige le texte d'une carte. Son historique est gardé.
   Future<void> updateCardText(
-      int id, String front, String back, DateTime now) async {
+      int id, String front, String back, DateTime now,
+      {List<String> wrongAnswers = const []}) async {
     try {
       await _db.update(
-          'cards', {'front': front, 'back': back, 'updated_at': _ms(now)},
-          where: 'id = ?', whereArgs: [id]);
+          'cards',
+          {
+            'front': front,
+            'back': back,
+            'wrong_answers': _wrongColumn(wrongAnswers),
+            'updated_at': _ms(now),
+          },
+          where: 'id = ?',
+          whereArgs: [id]);
     } on DatabaseException catch (error) {
       if (error.isUniqueConstraintError()) throw const CardFrontTaken();
       rethrow;
@@ -480,16 +531,22 @@ class AppDatabase {
           deckId = await txn.insert('decks', {
             'folder': parsed.folder,
             'name': parsed.name,
+            'answer_mode': (parsed.mode ?? AnswerMode.reveal).name,
             'created_at': _ms(now),
           });
           newDecks++;
         } else {
           deckId = found.first['id']! as int;
+          final mode = parsed.mode;
+          if (mode != null) {
+            await txn.update('decks', {'answer_mode': mode.name},
+                where: 'id = ?', whereArgs: [deckId]);
+          }
         }
 
         for (final card in parsed.cards) {
           final existing = await txn.query('cards',
-              columns: ['id', 'back'],
+              columns: ['id', 'back', 'wrong_answers'],
               where: 'deck_id = ? AND front = ?',
               whereArgs: [deckId, card.front]);
           if (existing.isEmpty) {
@@ -497,15 +554,24 @@ class AppDatabase {
               'deck_id': deckId,
               'front': card.front,
               'back': card.back,
+              'wrong_answers': _wrongColumn(card.wrongAnswers),
               ..._memoryColumns(Memory.fresh(now)),
               'created_at': _ms(now),
               'updated_at': _ms(now),
             });
             added++;
-          } else if (existing.first['back'] != card.back) {
+          } else if (existing.first['back'] != card.back ||
+              existing.first['wrong_answers'] !=
+                  _wrongColumn(card.wrongAnswers)) {
             await txn.update(
-                'cards', {'back': card.back, 'updated_at': _ms(now)},
-                where: 'id = ?', whereArgs: [existing.first['id']]);
+                'cards',
+                {
+                  'back': card.back,
+                  'wrong_answers': _wrongColumn(card.wrongAnswers),
+                  'updated_at': _ms(now),
+                },
+                where: 'id = ?',
+                whereArgs: [existing.first['id']]);
             updated++;
           } else {
             unchanged++;

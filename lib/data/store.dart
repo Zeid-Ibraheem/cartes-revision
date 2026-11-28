@@ -360,11 +360,26 @@ class AppStore extends ChangeNotifier {
 
   /// Renomme un paquet ou le déplace dans un autre dossier.
   Future<Deck> updateDeck(Deck deck, String folder, String name) async {
-    final updated = Deck(
-        id: deck.id, folder: _folderOrDefault(folder), name: cleanName(name));
+    final updated =
+        deck.copyWith(folder: _folderOrDefault(folder), name: cleanName(name));
     await _db.updateDeck(updated.id, updated.folder, updated.name);
     await refresh();
     return updated;
+  }
+
+  /// Change la façon de réviser [deck] (classique, écrire, QCM).
+  Future<Deck> setAnswerMode(Deck deck, AnswerMode mode) async {
+    await _db.setDeckMode(deck.id, mode);
+    await refresh();
+    return deck.copyWith(answerMode: mode);
+  }
+
+  /// Le paquet [id] tel qu'il est maintenant, ou `null` s'il n'existe plus.
+  Deck? deckById(int id) {
+    for (final deck in decks) {
+      if (deck.id == id) return deck;
+    }
+    return null;
   }
 
   Future<void> deleteDeck(Deck deck) async {
@@ -420,15 +435,26 @@ class AppStore extends ChangeNotifier {
 
   Future<List<Flashcard>> cardsOf(Deck deck) => _db.cards(deckId: deck.id);
 
-  Future<Flashcard> addCard(Deck deck, String front, String back) async {
-    final card = await _db.addCard(deck.id, cleanSide(front), cleanSide(back), _clock());
+  Future<Flashcard> addCard(Deck deck, String front, String back,
+      {List<String> wrongAnswers = const []}) async {
+    final card = await _db.addCard(
+        deck.id, cleanSide(front), cleanSide(back), _clock(),
+        wrongAnswers: cleanWrongAnswers(wrongAnswers, back));
     await refresh();
     return card;
   }
 
-  Future<Flashcard> updateCard(Flashcard card, String front, String back) async {
-    final updated = card.copyWith(front: cleanSide(front), back: cleanSide(back));
-    await _db.updateCardText(card.id, updated.front, updated.back, _clock());
+  Future<Flashcard> updateCard(Flashcard card, String front, String back,
+      {List<String>? wrongAnswers}) async {
+    final updated = card.copyWith(
+      front: cleanSide(front),
+      back: cleanSide(back),
+      wrongAnswers: wrongAnswers == null
+          ? null
+          : cleanWrongAnswers(wrongAnswers, back),
+    );
+    await _db.updateCardText(card.id, updated.front, updated.back, _clock(),
+        wrongAnswers: updated.wrongAnswers);
     return updated;
   }
 
@@ -458,9 +484,9 @@ class AppStore extends ChangeNotifier {
     final parsed = [
       for (final deck in decks)
         if (byDeck[deck.id] case final deckCards?)
-          ParsedDeck(deck.folder, deck.name)
-            ..cards.addAll(
-                deckCards.map((card) => ParsedCard(card.front, card.back))),
+          ParsedDeck(deck.folder, deck.name, mode: deck.answerMode)
+            ..cards.addAll(deckCards.map((card) =>
+                ParsedCard(card.front, card.back, card.wrongAnswers))),
     ]..sort((a, b) {
         final byFolder = a.folder.compareTo(b.folder);
         return byFolder != 0 ? byFolder : a.name.compareTo(b.name);

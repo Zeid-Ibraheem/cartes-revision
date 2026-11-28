@@ -44,6 +44,8 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
       TextEditingController(text: widget.card?.front ?? '');
   late final TextEditingController _back =
       TextEditingController(text: widget.card?.back ?? '');
+  late final TextEditingController _wrong = TextEditingController(
+      text: widget.card?.wrongAnswers.join('\n') ?? '');
   final FocusNode _frontFocus = FocusNode();
   late Deck? _deck = widget.deck;
   int _added = 0;
@@ -71,6 +73,7 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
   void dispose() {
     _front.dispose();
     _back.dispose();
+    _wrong.dispose();
     _frontFocus.dispose();
     super.dispose();
   }
@@ -134,11 +137,13 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
     try {
       final card = widget.card;
       if (card != null) {
-        final updated = await _store.updateCard(card, _front.text, _back.text);
+        final updated = await _store.updateCard(card, _front.text, _back.text,
+            wrongAnswers: _wrongLines);
         if (mounted) Navigator.of(context).pop(CardEditResult.saved(updated));
         return;
       }
-      await _store.addCard(deck!, _front.text, _back.text);
+      await _store.addCard(deck!, _front.text, _back.text,
+          wrongAnswers: _wrongLines);
       var added = 1;
       String? note;
       if (_inverse) {
@@ -157,6 +162,7 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
         _error = note;
         _front.clear();
         _back.clear();
+        _wrong.clear();
       });
       _frontFocus.requestFocus();
     } catch (error) {
@@ -188,7 +194,11 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
   /// Du texte a été tapé et pas encore enregistré.
   bool get _dirty =>
       _front.text != (widget.card?.front ?? '') ||
-      _back.text != (widget.card?.back ?? '');
+      _back.text != (widget.card?.back ?? '') ||
+      _wrong.text != (widget.card?.wrongAnswers.join('\n') ?? '');
+
+  /// Les mauvaises réponses du QCM, une par ligne.
+  List<String> get _wrongLines => _wrong.text.split('\n');
 
   /// Retour arrière : si du texte serait perdu, on demande d'abord.
   Future<void> _leave() async {
@@ -282,6 +292,14 @@ class _CardEditorScreenState extends State<CardEditorScreen> {
                     controller: _back,
                     minLines: 6,
                     hint: 'Ce que tu dois retrouver',
+                  ),
+                  const SizedBox(height: 20),
+                  const Caption('Mauvaises réponses pour le QCM (facultatif)'),
+                  _SideField(
+                    controller: _wrong,
+                    minLines: 3,
+                    hint: 'Une par ligne. Sans rien, l’appli en prend dans '
+                        'les autres cartes du paquet.',
                   ),
                   if (!_editing) ...[
                     const SizedBox(height: 8),

@@ -1,4 +1,5 @@
 import 'package:cartes_revision/domain/card_file.dart';
+import 'package:cartes_revision/domain/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -70,11 +71,14 @@ void main() {
     expect(file.decks.single.name, 'P');
   });
 
-  test('tabulation en trop dans la réponse et variantes de <br>', () {
-    final file =
-        parseCardFile('Q\tR\tS\nA<BR/>B\tC<br />D\n', fallbackDeck: 'f');
+  test('colonnes après la réponse = mauvaises réponses du QCM ; <br>', () {
+    final file = parseCardFile('Q\tR\tS\t\tR\tS\tT\nA<BR/>B\tC<br />D\n',
+        fallbackDeck: 'f');
     final cards = file.decks.single.cards;
-    expect(cards[0].back, 'R S');
+    expect(cards[0].back, 'R');
+    expect(cards[0].wrongAnswers, ['S', 'T'],
+        reason: 'vides, doublons et bonne réponse retirés');
+    expect(cards[1].wrongAnswers, isEmpty);
     expect(cards[1].front, 'A\nB');
     expect(cards[1].back, 'C\nD');
   });
@@ -145,5 +149,41 @@ void main() {
       'Cours › R3.07 › C1 : 2 cartes',
       '… et 1 autre(s) paquet(s)',
     ]);
+  });
+
+  test('# mode: donne la façon de réviser du paquet', () {
+    final file = parseCardFile(
+        '# paquet: A\n# mode: QCM\na\t1\t2\n'
+        '# paquet: B\nb\t1\n'
+        '# paquet: C\n# mode: Écrire\nc\t1\n'
+        '# mode: n\'importe quoi\n',
+        fallbackDeck: 'f');
+    expect(file.decks.map((d) => d.mode),
+        [AnswerMode.choice, null, AnswerMode.type]);
+    expect(file.issues.single.message, contains('mode inconnu'));
+    expect(parseAnswerMode('classique'), AnswerMode.reveal);
+    expect(parseAnswerMode('ecrire'), AnswerMode.type);
+  });
+
+  test('écrire puis relire garde le mode et les mauvaises réponses', () {
+    final source = [
+      ParsedDeck('Cours', 'Ports', mode: AnswerMode.choice)
+        ..cards.add(ParsedCard('SSH ?', '22', ['21', '23'])),
+      ParsedDeck('Cours', 'Sigles', mode: AnswerMode.type)
+        ..cards.add(ParsedCard('DNS ?', 'Domain Name System')),
+      ParsedDeck('Cours', 'Normal', mode: AnswerMode.reveal)
+        ..cards.add(ParsedCard('Q', 'R')),
+    ];
+    final text = writeCardFile(source);
+    expect(text, contains('# mode: qcm\nSSH ?\t22\t21\t23\n'));
+    expect(text, isNot(contains('# mode: classique')));
+    final back = parseCardFile(text, fallbackDeck: 'x');
+    expect(back.decks.map((d) => d.mode),
+        [AnswerMode.choice, AnswerMode.type, null]);
+    expect(back.decks.first.cards.single.wrongAnswers, ['21', '23']);
+  });
+
+  test('mauvaises réponses saisies à la main', () {
+    expect(cleanWrongAnswers([' 21 ', '', '22', '21', '23'], '22'), ['21', '23']);
   });
 }

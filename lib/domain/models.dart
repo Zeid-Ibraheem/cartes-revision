@@ -52,14 +52,39 @@ class Memory {
   bool get isNew => lastReview == null;
 }
 
+/// Comment on répond aux cartes d'un paquet pendant la révision.
+enum AnswerMode {
+  /// Voir la réponse, puis se noter (classique).
+  reveal,
+
+  /// Écrire la réponse au clavier, puis comparer.
+  type,
+
+  /// Choisir parmi plusieurs réponses (QCM).
+  choice,
+}
+
 /// Un paquet de cartes, rangé dans un dossier (ex. dossier « R3.07 »,
 /// paquet « Contrôle 1 »).
 class Deck {
-  const Deck({required this.id, required this.folder, required this.name});
+  const Deck({
+    required this.id,
+    required this.folder,
+    required this.name,
+    this.answerMode = AnswerMode.reveal,
+  });
 
   final int id;
   final String folder;
   final String name;
+  final AnswerMode answerMode;
+
+  Deck copyWith({String? folder, String? name, AnswerMode? answerMode}) => Deck(
+        id: id,
+        folder: folder ?? this.folder,
+        name: name ?? this.name,
+        answerMode: answerMode ?? this.answerMode,
+      );
 }
 
 /// Une carte : une question, une réponse, et l'état de sa mémorisation.
@@ -70,6 +95,7 @@ class Flashcard {
     required this.front,
     required this.back,
     required this.memory,
+    this.wrongAnswers = const [],
   });
 
   final int id;
@@ -83,13 +109,23 @@ class Flashcard {
 
   final Memory memory;
 
-  Flashcard copyWith({String? front, String? back, Memory? memory}) {
+  /// Mauvaises réponses écrites pour le QCM (souvent vide : l'appli en
+  /// pioche alors dans les autres cartes du paquet).
+  final List<String> wrongAnswers;
+
+  Flashcard copyWith({
+    String? front,
+    String? back,
+    Memory? memory,
+    List<String>? wrongAnswers,
+  }) {
     return Flashcard(
       id: id,
       deckId: deckId,
       front: front ?? this.front,
       back: back ?? this.back,
       memory: memory ?? this.memory,
+      wrongAnswers: wrongAnswers ?? this.wrongAnswers,
     );
   }
 }

@@ -24,6 +24,7 @@ lib/
     ├── models.dart            Deck, Flashcard, Memory, Grade
     ├── scheduler.dart         l'interface du moteur de répétition
     ├── study_session.dart     quelles cartes, dans quel ordre
+    ├── answer_check.dart      réponse écrite comparée à la bonne, choix du QCM
     ├── practice_session.dart  entraînement libre (rien n'est enregistré)
     ├── reminder_plan.dart     quand prévenir, avec quel message
     ├── card_file.dart         lecture des fichiers de cartes

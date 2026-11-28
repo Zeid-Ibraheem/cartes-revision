@@ -85,6 +85,15 @@ class _DeckScreenState extends State<DeckScreen> {
     await _reload();
   }
 
+  Future<void> _setMode(AnswerMode mode) async {
+    try {
+      final deck = await _store.setAnswerMode(_deck, mode);
+      if (mounted) setState(() => _deck = deck);
+    } catch (error) {
+      if (mounted) showSnack(context, errorMessage(error));
+    }
+  }
+
   Future<void> _deckMenu() async {
     final choice = await showActionSheet<String>(
       context,
@@ -206,6 +215,41 @@ class _DeckScreenState extends State<DeckScreen> {
               ],
             ],
           ),
+        ),
+        const SizedBox(height: 20),
+        const Caption('Façon de répondre'),
+        SegmentedButton<AnswerMode>(
+          showSelectedIcon: false,
+          segments: const [
+            ButtonSegment(
+                value: AnswerMode.reveal,
+                label: Text('Classique'),
+                icon: Icon(Icons.visibility_outlined)),
+            ButtonSegment(
+                value: AnswerMode.type,
+                label: Text('Écrire'),
+                icon: Icon(Icons.keyboard_outlined)),
+            ButtonSegment(
+                value: AnswerMode.choice,
+                label: Text('QCM'),
+                icon: Icon(Icons.checklist)),
+          ],
+          selected: {_deck.answerMode},
+          onSelectionChanged: (selection) => _setMode(selection.first),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          switch (_deck.answerMode) {
+            AnswerMode.reveal =>
+              'Voir la réponse, puis te noter.',
+            AnswerMode.type =>
+              'Écrire la réponse : exacte, elle compte « Correct » ; '
+                  'sinon l’appli montre la différence et tu te notes.',
+            AnswerMode.choice =>
+              'Choisir parmi 4 réponses : les mauvaises écrites sur la carte, '
+                  'sinon des réponses d’autres cartes du paquet.',
+          },
+          style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
         ),
         const SizedBox(height: 24),
         Caption(cards.length > 1 ? '${cards.length} cartes' : '${cards.length} carte'),

@@ -392,6 +392,86 @@ void main() {
     expect(report.unchanged, 3);
   });
 
+    test('mise à jour d’une base version 1 : rien n’est perdu', () async {
+    // Base créée par une version d'avant (schéma 1), sur disque.
+    final dir = await databaseFactoryFfi.getDatabasesPath();
+    final file = '$dir/migration_test.db';
+    await databaseFactoryFfi.deleteDatabase(file);
+    final v1 = await databaseFactoryFfi.openDatabase(file,
+        options: OpenDatabaseOptions(
+          version: 1,
+          onCreate: (db, _) async {
+            await db.execute('CREATE TABLE decks (id INTEGER PRIMARY KEY '
+                'AUTOINCREMENT, folder TEXT NOT NULL, name TEXT NOT NULL, '
+                'created_at INTEGER NOT NULL, UNIQUE (folder, name))');
+            await db.execute('CREATE TABLE cards (id INTEGER PRIMARY KEY '
+                'AUTOINCREMENT, deck_id INTEGER NOT NULL, front TEXT NOT NULL, '
+                'back TEXT NOT NULL, state TEXT NOT NULL, step INTEGER, '
+                'stability REAL, difficulty REAL, due INTEGER NOT NULL, '
+                'last_review INTEGER, created_at INTEGER NOT NULL, '
+                'updated_at INTEGER NOT NULL, UNIQUE (deck_id, front))');
+            await db.execute('CREATE TABLE reviews (id INTEGER PRIMARY KEY '
+                'AUTOINCREMENT, card_id INTEGER NOT NULL, reviewed_at INTEGER '
+                'NOT NULL, grade TEXT NOT NULL, state_before TEXT NOT NULL, '
+                'was_new INTEGER NOT NULL, duration_ms INTEGER)');
+            await db.execute(
+                'CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
+            await db.insert('decks',
+                {'folder': 'Cours', 'name': 'P', 'created_at': 0});
+            await db.insert('cards', {
+              'deck_id': 1, 'front': 'q', 'back': 'r', 'state': 'learning',
+              'due': 0, 'created_at': 0, 'updated_at': 0,
+            });
+          },
+        ));
+    await v1.close();
+
+    final upgraded =
+        await AppDatabase.open(factory: databaseFactoryFfi, path: file);
+    final store = await AppStore.open(database: upgraded, clock: () => now);
+    final deck = store.decks.single;
+    expect(deck.answerMode, AnswerMode.reveal);
+    final card = (await store.cardsIn(const AllCards())).single;
+    expect(card.front, 'q');
+    expect(card.back, 'r');
+    expect(card.wrongAnswers, isEmpty);
+    await store.setAnswerMode(deck, AnswerMode.choice);
+    await store.updateCard(card, 'q', 'r', wrongAnswers: ['s']);
+    final again = await AppStore.open(database: upgraded, clock: () => now);
+    expect(again.decks.single.answerMode, AnswerMode.choice);
+    expect((await again.cardsIn(const AllCards())).single.wrongAnswers, ['s']);
+    await upgraded.close();
+    await databaseFactoryFfi.deleteDatabase(file);
+  });
+
+  test('mode et mauvaises réponses : import, export, réimport', () async {
+    final store = await AppStore.open(database: db, clock: () => now);
+    var report = await store.importText(
+        '# dossier: Cours\n# paquet: Ports\n# mode: qcm\nSSH\t22\t21\t23\n',
+        fallbackDeck: 'f');
+    expect(report.added, 1);
+    final deck = store.decks.single;
+    expect(deck.answerMode, AnswerMode.choice);
+    expect(store.deckById(deck.id)?.answerMode, AnswerMode.choice);
+    final card = (await store.cardsIn(DeckCards(deck))).single;
+    expect(card.wrongAnswers, ['21', '23']);
+
+    final export = await store.exportCards(const AllCards(), now);
+    expect(export.text, contains('# mode: qcm\nSSH\t22\t21\t23\n'));
+
+    // Mauvaises réponses changées : la carte est mise à jour, historique gardé.
+    report = await store.importText(
+        '# dossier: Cours\n# paquet: Ports\nSSH\t22\t80\n', fallbackDeck: 'f');
+    expect(report.updated, 1);
+    expect((await store.cardsIn(DeckCards(deck))).single.wrongAnswers, ['80']);
+    expect(store.decks.single.answerMode, AnswerMode.choice,
+        reason: 'sans « # mode: », le mode du paquet ne change pas');
+
+    // Renommer garde le mode.
+    final renamed = await store.updateDeck(store.decks.single, 'Cours', 'Ports 2');
+    expect(renamed.answerMode, AnswerMode.choice);
+  });
+
     test('le dernier paquet utilisé est retenu', () async {
     final store = await AppStore.open(database: db, clock: () => now);
     final a = await store.createDeck('A', 'P1');

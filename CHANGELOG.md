@@ -5,6 +5,16 @@ Les changements de chaque version. Format : [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+### Ajouté
+- Façon de répondre par paquet (écran du paquet, ou `# mode:` dans le fichier) : classique, **écrire** la réponse au clavier, ou **QCM**.
+- Écrire : réponse exacte lettre pour lettre = « Correct » en un appui (note modifiable) ; sinon l'appli montre la différence lettre par lettre et dit si c'est juste aux accents ou majuscules près, ou à combien de lettres près ; c'est toi qui te notes.
+- QCM : 4 réponses, la bonne, les mauvaises écrites sur la carte (colonnes après la réponse dans le fichier, ou champ dans l'éditeur), complétées par des réponses d'autres cartes du paquet. Mauvais choix : « À revoir » ; bon choix : « Je savais » ou « J'ai hésité ».
+
+### Changé
+- Base de données en version 2 (façon de réviser, mauvaises réponses) : mise à jour automatique au premier lancement, rien n'est perdu.
+- Fichiers de cartes : les colonnes après la réponse sont maintenant les mauvaises réponses du QCM (avant, une tabulation en trop devenait un espace dans la réponse).
+- L'export garde le mode des paquets et les mauvaises réponses.
+
 ## [0.10.0] - 2026-11-26
 
 ### Ajouté
